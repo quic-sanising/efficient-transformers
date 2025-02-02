@@ -89,3 +89,9 @@ cython_debug/
 cache_dir
 qeff_models
 .vscode/*
+QEfficient/transformers/sampler/test_sampler/io_data
+QEfficient/transformers/sampler/test_sampler/on_device_sampling_onnx
+QEfficient/transformers/sampler/test_sampler/on_device_sampling_qpcs
+QEfficient/transformers/sampler/test_sampler/outputs_from_qpcs
+QEfficient/transformers/sampler/test_sampler/pytest_outputs
+QEfficient/transformers/sampler/test_sampler/*.bin
