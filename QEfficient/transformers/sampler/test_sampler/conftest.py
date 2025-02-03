@@ -94,3 +94,48 @@ def setup_data_top_ps(batch_size, vocab_size):
         "top_ks": top_ks,
         "top_ps": top_ps,
     }
+
+
+@pytest.fixture
+def setup_data(sequence_length, batch_size, vocab_size, ctx_length):
+    import numpy as np
+
+    seed = np.random.randint(1, 101)
+    torch.manual_seed(seed)
+
+    prompt_token_ids = torch.randint(low=0, high=vocab_size, size=(batch_size, sequence_length))
+    output_token_ids = torch.randint(low=0, high=vocab_size, size=(batch_size, ctx_length))
+
+    logits = torch.randn(batch_size, 1, vocab_size)
+
+    repetition_penalty_retain_state = torch.zeros(batch_size, vocab_size, dtype=torch.int32)
+    presence_penalty_retain_state = torch.zeros(batch_size, vocab_size, dtype=torch.int32)
+
+    repetition_penalty_retain_state.scatter_(1, prompt_token_ids, 1)
+    repetition_penalty_retain_state.scatter_(1, output_token_ids[:, :-1], 1)
+    presence_penalty_retain_state.scatter_(1, output_token_ids[:, :-1], 1)
+
+    repetition_penalties = torch.randint(1, 21, (batch_size,)) / 10.0
+    presence_penalties = torch.randint(-10, 10, (batch_size,)) / 10.0
+
+    temperatures = torch.randint(1, 11, (batch_size,)) / 10.0
+
+    top_ks = torch.randint(1, vocab_size, (batch_size,))  # Between 1 and vocab_size
+
+
+    return {
+        "seed": seed,
+        "sequence_length": sequence_length,
+        "batch_size": batch_size,
+        "vocab_size": vocab_size,
+        "ctx_length": ctx_length,
+        "prompt_token_ids": prompt_token_ids,
+        "output_token_ids": output_token_ids,
+        "logits": logits,
+        "repetition_penalty_retain_state": repetition_penalty_retain_state,
+        "presence_penalty_retain_state": presence_penalty_retain_state,
+        "repetition_penalties": repetition_penalties,
+        "presence_penalties": presence_penalties,
+        "temperatures": temperatures,
+        "top_ks": top_ks,
+    }

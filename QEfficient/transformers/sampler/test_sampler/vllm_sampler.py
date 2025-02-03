@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from typing import Dict, List, Optional, Set, Tuple, TypeVar, Union
 
 
-# _SAMPLING_EPS = 1e-5
+_SAMPLING_EPS = 1e-5
 
 @dataclass
 class SamplingMetadata:
@@ -51,62 +51,67 @@ class SamplerOutput:
     prompt_logprobs: Optional[torch.Tensor]
 
 
-# class TopKTopPSampler(nn.Module):
-#     def __init__(self):
-#         super().__init__()
+class TopKTopPSampler(nn.Module):
+    def __init__(self):
+        super().__init__()
 
-#     def forward(
-#         self,
-#         logits: torch.Tensor,
-#         generators: Dict[int, torch.Generator],
-#         no_top_k: bool,
-#         k: torch.Tensor,
-#         no_top_p: bool,
-#         p: torch.Tensor,
-#     ) -> torch.Tensor:
-#         """PyTorch-native implementation of top-k and top-p sampling."""
-#         logits = apply_top_k_top_p(logits, no_top_k, k, no_top_p, p)
-#         probs = logits.softmax(dim=-1, dtype=torch.float32)
-#         return probs
-#         # return random_sample(probs, generators)
+    def forward(
+        self,
+        logits: torch.Tensor,
+        generators: Dict[int, torch.Generator],
+        no_top_k: bool,
+        k: torch.Tensor,
+        no_top_p: bool,
+        p: torch.Tensor,
+    ) -> torch.Tensor:
+        """PyTorch-native implementation of top-k and top-p sampling."""
+        
+        # print("-"*100)
+        # params = locals()
+        # for param, value in params.items():
+        #     print(f"{param}: {value}")
+        # print("-"*100)
+
+        logits = apply_top_k_top_p(logits, no_top_k, k, no_top_p, p)
+        probs = logits.softmax(dim=-1, dtype=torch.float32)
+        return probs
 
 
+def apply_top_k_top_p(
+    logits: torch.Tensor,
+    no_top_k: bool,
+    k: torch.Tensor,
+    no_top_p: bool,
+    p: torch.Tensor,
+) -> torch.Tensor:
+    """Apply top-k and top-p masks to the logits.
 
-# def apply_top_k_top_p(
-#     logits: torch.Tensor,
-#     no_top_k: bool,
-#     k: torch.Tensor,
-#     no_top_p: bool,
-#     p: torch.Tensor,
-# ) -> torch.Tensor:
-#     """Apply top-k and top-p masks to the logits.
+    This function sorts the logits tensor, which can be slow for large batches.
+    """
+    if no_top_k and no_top_p:
+        return logits
+    logits_sort, logits_idx = logits.sort(dim=-1, descending=False)
 
-#     This function sorts the logits tensor, which can be slow for large batches.
-#     """
-#     if no_top_k and no_top_p:
-#         return logits
-#     logits_sort, logits_idx = logits.sort(dim=-1, descending=False)
+    if not no_top_k:
+        # Apply top-k.
+        top_k_mask = logits_sort.size(1) - k.to(torch.long)
+        # Get all the top_k values.
+        top_k_mask = logits_sort.gather(1, top_k_mask.unsqueeze(dim=1))
+        top_k_mask = logits_sort < top_k_mask
+        logits_sort.masked_fill_(top_k_mask, -float("inf"))
 
-#     if not no_top_k:
-#         # Apply top-k.
-#         top_k_mask = logits_sort.size(1) - k.to(torch.long)
-#         # Get all the top_k values.
-#         top_k_mask = logits_sort.gather(1, top_k_mask.unsqueeze(dim=1))
-#         top_k_mask = logits_sort < top_k_mask
-#         logits_sort.masked_fill_(top_k_mask, -float("inf"))
+    if not no_top_p:
+        # Apply top-p.
+        probs_sort = logits_sort.softmax(dim=-1)
+        probs_sum = probs_sort.cumsum(dim=-1)
+        top_p_mask = probs_sum <= 1 - p.unsqueeze(dim=1)
+        # at least one
+        top_p_mask[:, -1] = False
+        logits_sort.masked_fill_(top_p_mask, -float("inf"))
 
-#     if not no_top_p:
-#         # Apply top-p.
-#         probs_sort = logits_sort.softmax(dim=-1)
-#         probs_sum = probs_sort.cumsum(dim=-1)
-#         top_p_mask = probs_sum <= 1 - p.unsqueeze(dim=1)
-#         # at least one
-#         top_p_mask[:, -1] = False
-#         logits_sort.masked_fill_(top_p_mask, -float("inf"))
-
-#     # Re-sort the probabilities.
-#     logits = logits_sort.scatter(dim=-1, index=logits_idx, src=logits_sort)
-#     return logits
+    # Re-sort the probabilities.
+    logits = logits_sort.scatter(dim=-1, index=logits_idx, src=logits_sort)
+    return logits
 
 
 # def random_sample(
@@ -136,7 +141,7 @@ class SamplerOutput:
 class Sampler(nn.Module):
     def __init__(self):
         super().__init__()
-        # self.topk_topp_sampler = TopKTopPSampler()
+        self.topk_topp_sampler = TopKTopPSampler()
 
     def forward(
         self,
@@ -153,7 +158,11 @@ class Sampler(nn.Module):
         # Use float32 for the logits.
         logits = logits.to(torch.float32)
         # Apply penalties (e.g., min_tokens, freq_penalties).
-        return self.apply_penalties(logits, sampling_metadata)
+        logits, prompt_mask, output_mask = self.apply_penalties(logits, sampling_metadata)
+        # Apply temperature.
+        logits = self.apply_temperature(logits, sampling_metadata.temperature)
+        # Sample the next token.
+        return self.sample(logits, sampling_metadata)
 
     # def forward(
     #     self,
@@ -196,21 +205,33 @@ class Sampler(nn.Module):
     #     )
     #     return sampler_output
 
-    # def apply_temperature(
-    #     self,
-    #     logits: torch.Tensor,
-    #     temp: torch.Tensor,
-    # ) -> torch.Tensor:
-    #     # Avoid division by zero.
-    #     print(temp)
-    #     temp = torch.where(temp < _SAMPLING_EPS, 1.0, temp)
-    #     # Use in-place division to avoid creating a new tensor.
-    #     logits.div_(temp.unsqueeze(dim=1))
-    #     return logits
+    def apply_temperature(
+        self,
+        logits: torch.Tensor,
+        temp: torch.Tensor,
+    ) -> torch.Tensor:
+        # Avoid division by zero.
+        temp = torch.where(temp < _SAMPLING_EPS, 1.0, temp)
+        # Use in-place division to avoid creating a new tensor.
+        logits.div_(temp.unsqueeze(dim=1))
+        return logits
 
     # def greedy_sample(self, logits: torch.Tensor) -> torch.Tensor:
     #     return logits.argmax(dim=-1).view(-1)
 
+    def sample(
+        self,
+        logits: torch.Tensor,
+        sampling_metadata: SamplingMetadata,
+    ) -> torch.Tensor:
+        return self.topk_topp_sampler(
+            logits,
+            sampling_metadata.generators,
+            sampling_metadata.no_top_k,
+            sampling_metadata.top_k,
+            sampling_metadata.no_top_p,
+            sampling_metadata.top_p,
+        )
     # def sample(
     #     self,
     #     logits: torch.Tensor,

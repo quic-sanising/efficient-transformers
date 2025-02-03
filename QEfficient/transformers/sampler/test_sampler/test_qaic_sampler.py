@@ -1,0 +1,67 @@
+import torch
+
+from QEfficient.transformers.sampler.test_sampler.sampler import sampler_forward
+from QEfficient.transformers.sampler.test_sampler.vllm_sampler import (
+    Sampler,
+    SamplingMetadata,
+)
+
+
+def test_cpu_vs_vllm_cpu(setup_data):
+    print(setup_data["seed"])
+
+    prompt_token_ids = setup_data["prompt_token_ids"]
+    output_token_ids = setup_data["output_token_ids"]
+
+    logits = setup_data["logits"]
+
+    repetition_penalty_retain_state = setup_data["repetition_penalty_retain_state"]
+    presence_penalty_retain_state = setup_data["presence_penalty_retain_state"]
+
+    repetition_penalties = setup_data["repetition_penalties"]
+    presence_penalties = setup_data["presence_penalties"]
+
+    temperatures = setup_data["temperatures"]
+
+    top_ks = setup_data["top_ks"]
+
+    vllm_sampler = Sampler()
+    sampling_metadata = SamplingMetadata(
+        temperature=temperatures,
+        all_greedy=False,
+        all_random=False,
+        top_p=None,
+        top_k=top_ks,
+        no_top_p=True,
+        no_top_k=False,
+        generators=None,
+        max_num_logprobs=0,
+        no_penalties=False,
+        prompt_token_ids=prompt_token_ids,
+        frequency_penalties=None,
+        presence_penalties=presence_penalties,
+        repetition_penalties=repetition_penalties,
+        output_token_ids=output_token_ids.tolist(),
+        min_tokens=None,
+        stop_token_ids=None,
+    )
+
+    qeff_output = sampler_forward(
+        None,
+        output_token_ids[:, -1:],
+        logits,
+        output_token_ids[:, -1:],
+        repetition_penalty_retain_state,
+        repetition_penalties,
+        presence_penalty_retain_state,
+        presence_penalties,
+        temperatures,
+        top_ks,
+    )
+    vllm_output_logits = vllm_sampler(
+        logits.squeeze(1), sampling_metadata
+    )
+
+    assert torch.allclose(
+        qeff_output.logits.squeeze(1), vllm_output_logits, atol=1e-6
+    ), "Output logits do not match"
