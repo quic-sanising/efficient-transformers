@@ -17,7 +17,7 @@ class QEffCausalLMOutputWithPast(ModelOutput):
 
 def sampler_forward(
     self,
-    logits: torch.Tensor,
+    input_logits: torch.Tensor,
     top_ks: Optional[torch.Tensor] = None,
     top_ps: Optional[torch.Tensor] = None,
 ) -> Union[Tuple, CausalLMOutputWithPast]:
@@ -29,41 +29,26 @@ def sampler_forward(
     # print("-"*100)
 
     # Perform Sampling
-    batch_size, spec_length, vocab_size = logits.shape
-    logits = logits.reshape(batch_size * spec_length, vocab_size)  # Reshape tensor to 2D
+    batch_size, spec_length, vocab_size = input_logits.shape
+    logits = input_logits.reshape(batch_size * spec_length, vocab_size)  # Reshape tensor to 2D
 
     # Top K
     topk_values, topk_indices = torch.topk(logits, k=vocab_size, dim=1)  # (batch_size * spec_length, vocab_size)
 
     # True values in this mask indicate the positions of the top K values.
     topk_inverted_mask = torch.arange(topk_values.shape[1]).unsqueeze(0) < top_ks.unsqueeze(1).repeat(spec_length, 1)
-    topk_values[~topk_inverted_mask] = -float("inf")
+    topk_values[~topk_inverted_mask] = torch.finfo(torch.float16).tiny
 
     # Top P
-    top_probs = torch.softmax(topk_values, dim=1)  # (batch_size * spec_length, vocab_size)
+    topk_values_asc = torch.flip(topk_values, dims=[1])
+    topk_indices_asc = torch.flip(topk_indices, dims=[1])
+    top_probs = torch.softmax(topk_values_asc, dim=1)  # (batch_size * spec_length, vocab_size)
     topk_probs_sum = torch.cumsum(top_probs, dim=1)
-    top_p_mask = topk_probs_sum > top_ps.unsqueeze(1).repeat(spec_length, 1) 
+    top_p_mask = topk_probs_sum <= 1 - top_ps.unsqueeze(1).repeat(spec_length, 1) 
+    top_p_mask[:, -1] = False
+    topk_values_asc[top_p_mask] = torch.finfo(torch.float16).tiny
 
-    # Shift the mask to the right by one position.
-    shifted_mask = torch.zeros_like(top_p_mask)
-    shifted_mask[:, 1:] = top_p_mask[:, :-1]
-
-    # Ensure the first position is always False.
-    shifted_mask[:, 0] = False
-    # True values in
-    # this mask indicate the positions where the cumulative probability exceeds the
-    # threshold, and these values are set to 0.
-    # top_probs = torch.where(shifted_mask, torch.tensor(0.0), top_probs)  # (batch_size * spec_length, vocab_size)
-
-    # # Scatter the top probs into the probs tensor
-    # probs = torch.zeros(logits.shape, dtype=torch.float)
-    # probs.scatter_(1, topk_indices, top_probs)  # (batch_size * spec_length, vocab_size)
-
-    # # Reshape tensor back to 3D
-    # probs = probs.reshape(batch_size, spec_length, vocab_size)
-
-    topk_values[top_p_mask] = -float("inf")
-    logits.scatter_(1, topk_indices, topk_values)  # (batch_size * spec_length, vocab_size)
+    logits = logits.scatter(1, topk_indices_asc, topk_values_asc)  # (batch_size * spec_length, vocab_size)
     logits = logits.reshape(batch_size, spec_length, vocab_size)
 
     return QEffCausalLMOutputWithPast(
