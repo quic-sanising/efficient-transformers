@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 import torch
 
+# from QEfficient.customop import CtxScatterFunc
 from transformers.modeling_outputs import ModelOutput, CausalLMOutputWithPast
 from typing import Optional, Tuple, Union
 
@@ -17,7 +18,7 @@ class QEffCausalLMOutputWithPast(ModelOutput):
 
 def sampler_forward(
     self,
-    logits: torch.Tensor,
+    input_logits: torch.Tensor,
     top_ks: Optional[torch.Tensor] = None,
 ) -> Union[Tuple, CausalLMOutputWithPast]:
     
@@ -28,17 +29,18 @@ def sampler_forward(
     # print("-"*100)
 
     # Perform Sampling
-    batch_size, spec_length, vocab_size = logits.shape
-    logits = logits.reshape(batch_size * spec_length, vocab_size)  # Reshape tensor to 2D
+    batch_size, spec_length, vocab_size = input_logits.shape
+    logits = input_logits.reshape(batch_size * spec_length, vocab_size)  # Reshape tensor to 2D
 
     # Top K
     topk_values, topk_indices = torch.topk(logits, k=vocab_size, dim=1)  # (batch_size * spec_length, vocab_size)
 
     # True values in this mask indicate the positions of the top K values.
     topk_inverted_mask = torch.arange(topk_values.shape[1]).unsqueeze(0) < top_ks.unsqueeze(1).repeat(spec_length, 1)
-    topk_values[~topk_inverted_mask] = -float("inf")
+    topk_values[~topk_inverted_mask] = torch.finfo(torch.float16).tiny
 
-    logits.scatter_(1, topk_indices, topk_values)  # (batch_size * spec_length, vocab_size)
+    # logits = CtxScatterFunc.apply(logits.unsqueeze(1), topk_indices.unsqueeze(1), topk_values.unsqueeze(1)).squeeze(1)
+    logits = logits.scatter(1, topk_indices, topk_values)  # (batch_size * spec_length, vocab_size)
     logits = logits.reshape(batch_size, spec_length, vocab_size)
 
     return QEffCausalLMOutputWithPast(
