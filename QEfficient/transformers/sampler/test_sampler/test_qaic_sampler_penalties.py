@@ -1,3 +1,4 @@
+from copy import deepcopy
 import numpy as np
 import subprocess
 import torch
@@ -80,9 +81,14 @@ def test_cpu_vs_qaic(setup_data_penalties):
     output_token_ids = setup_data_penalties["output_token_ids"]
 
     logits = setup_data_penalties["logits"]
+    print("Logits", logits)
+    qaic_logits = deepcopy(setup_data_penalties["logits"])
+    print("QAIC logits", qaic_logits)
 
     repetition_penalty_retain_state = setup_data_penalties["repetition_penalty_retain_state"]
+    qaic_repetition_penalty_retain_state = deepcopy(setup_data_penalties["repetition_penalty_retain_state"])
     presence_penalty_retain_state = setup_data_penalties["presence_penalty_retain_state"]
+    qaic_presence_penalty_retain_state = deepcopy(setup_data_penalties["presence_penalty_retain_state"])
 
     repetition_penalties = setup_data_penalties["repetition_penalties"]
     presence_penalties = setup_data_penalties["presence_penalties"]
@@ -106,18 +112,20 @@ def test_cpu_vs_qaic(setup_data_penalties):
 
     inputs = {
         # "input_ids": output_token_ids[:, -1:].detach().cpu().numpy(),
-        "input_logits": logits.detach().cpu().numpy(),
+        "input_logits": qaic_logits.detach().cpu().numpy(),
         "last_accepted_output_tokens": output_token_ids[:, -1:].detach().cpu().numpy(),
-        "repetition_penalty_retain_state": repetition_penalty_retain_state.detach().cpu().numpy(),
+        "repetition_penalty_retain_state": qaic_repetition_penalty_retain_state.detach().cpu().numpy(),
         "repetition_penalties": repetition_penalties.detach().cpu().numpy(),
-        "presence_penalty_retain_state": presence_penalty_retain_state.detach().cpu().numpy(),
+        "presence_penalty_retain_state": qaic_presence_penalty_retain_state.detach().cpu().numpy(),
         "presence_penalties": presence_penalties.detach().cpu().numpy(),
     }
     outputs = {
-        "logits": logits.detach().cpu().numpy(),
-        "repetition_penalty_retain_state_RetainedState": repetition_penalty_retain_state.detach().cpu().numpy(),
-        "presence_penalty_retain_state_RetainedState": presence_penalty_retain_state.detach().cpu().numpy(),
+        "logits": qaic_logits.detach().cpu().numpy(),
+        "repetition_penalty_retain_state_RetainedState": qaic_repetition_penalty_retain_state.detach().cpu().numpy(),
+        "presence_penalty_retain_state_RetainedState": qaic_presence_penalty_retain_state.detach().cpu().numpy(),
     }
+    print("Inputs", inputs)
+    print("Outputs", outputs)
     write_io_files(
         inputs,
         outputs,
@@ -141,11 +149,11 @@ def test_cpu_vs_qaic(setup_data_penalties):
         (
             None,
             output_token_ids[:, -1:],
-            logits,
+            qaic_logits,
             output_token_ids[:, -1:],
-            repetition_penalty_retain_state,
+            qaic_repetition_penalty_retain_state,
             repetition_penalties,
-            presence_penalty_retain_state,
+            qaic_presence_penalty_retain_state,
             presence_penalties,
         ),
         onnx_path,
@@ -249,6 +257,8 @@ def test_cpu_vs_qaic(setup_data_penalties):
 
 def test_gpu_vs_qaic(setup_data_penalties):
     print(setup_data_penalties["seed"])
+
+    # TODO: Check how to send tensors to cuda in float16 
 
     prompt_token_ids = setup_data_penalties["prompt_token_ids"].cuda()
     output_token_ids = setup_data_penalties["output_token_ids"].cuda()

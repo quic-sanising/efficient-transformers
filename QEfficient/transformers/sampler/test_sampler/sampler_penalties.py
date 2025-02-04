@@ -47,19 +47,19 @@ def sampler_forward(
         # TODO: For frequency retain state, first gather and then scatter
 
     # Repetition Penalty
-    if (repetition_penalties != 1.).any():
-        repetition_penalties = repetition_penalties.unsqueeze(1).repeat(spec_length, vocab_size)  # (batch_size,) -> (batch_size * spec_length, vocab_size)
-        repetition_penalty_retain_state = repetition_penalty_retain_state.repeat(spec_length, 1)  # (batch_size, vocab_size) -> (batch_size * spec_length, vocab_size)
-        repetition_penalties[~repetition_penalty_retain_state.bool()] = 1.0
-        logits = torch.where(
-            logits > 0, logits / repetition_penalties, logits * repetition_penalties
-        )
+    # if (repetition_penalties != 1.).any():
+    repetition_penalties = repetition_penalties.unsqueeze(1).repeat(spec_length, vocab_size)  # (batch_size,) -> (batch_size * spec_length, vocab_size)
+    repetition_penalty_retain_state = repetition_penalty_retain_state.repeat(spec_length, 1)  # (batch_size, vocab_size) -> (batch_size * spec_length, vocab_size)
+    repetition_penalties[~repetition_penalty_retain_state.bool()] = 1.0
+    logits = torch.where(
+        logits > 0, logits / repetition_penalties, logits * repetition_penalties
+    )
 
     # Presence Penalty
-    if (presence_penalties != 0.).any():
-        presence_penalties = presence_penalties.unsqueeze(1).repeat(spec_length, 1)  # (batch_size,) -> (batch_size * spec_length, 1)
-        presence_penalty_retain_state = presence_penalty_retain_state.repeat(spec_length, 1)  # (batch_size, vocab_size) -> (batch_size * spec_length, vocab_size)
-        logits -= presence_penalties * presence_penalty_retain_state
+    # if (presence_penalties != 0.).any():
+    presence_penalties = presence_penalties.unsqueeze(1).repeat(spec_length, 1)  # (batch_size,) -> (batch_size * spec_length, 1)
+    presence_penalty_retain_state = presence_penalty_retain_state.repeat(spec_length, 1)  # (batch_size, vocab_size) -> (batch_size * spec_length, vocab_size)
+    logits -= presence_penalties * presence_penalty_retain_state
 
     # TODO: Frequency Penalty
     
