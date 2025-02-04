@@ -162,7 +162,8 @@ class Sampler(nn.Module):
         # Apply temperature.
         logits = self.apply_temperature(logits, sampling_metadata.temperature)
         # Sample the next token.
-        return self.sample(logits, sampling_metadata)
+        probs = self.sample(logits, sampling_metadata)
+        return probs, prompt_mask, output_mask
 
     # def forward(
     #     self,
