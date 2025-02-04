@@ -2,6 +2,7 @@ from dataclasses import dataclass
 import torch
 import torch.nn.functional as F
 
+# from QEfficient.customop import CtxScatterFunc
 from transformers.cache_utils import Cache
 from transformers.modeling_outputs import ModelOutput, CausalLMOutputWithPast
 from typing import List, Optional, Tuple, Union
@@ -166,12 +167,15 @@ def sampler_forward(
     logits = logits.float()  # (batch_size, num_logits_to_keep aka spec_length, vocab_size)
 
     # Perform Sampling
+    device = logits.device
     batch_size, spec_length, vocab_size = logits.shape
     logits = logits.reshape(batch_size * spec_length, vocab_size)  # Reshape tensor to 2D
 
     if input_ids.shape[1] != spec_length:  # Prefill phase, initialize retained states
         repetition_penalty_retain_state = torch.mul(repetition_penalty_retain_state, 0)
         presence_penalty_retain_state = torch.mul(presence_penalty_retain_state, 0)
+        # TODO: Replace scatter_ with CtxScatterFunc; Replace -1 with int_max while exporting on onnx
+        # repetition_penalty_retain_state = CtxScatterFunc.apply(repetition_penalty_retain_state.unsqueeze(1), input_ids, 1).squeeze(1)
         repetition_penalty_retain_state.scatter_(1, input_ids, 1)
     else:  # Decode phase, update retained states
         repetition_penalty_retain_state.scatter_(1, last_accepted_output_tokens, 1)
@@ -204,25 +208,22 @@ def sampler_forward(
     topk_values, topk_indices = torch.topk(logits, k=vocab_size, dim=1)  # (batch_size * spec_length, vocab_size)
 
     # True values in this mask indicate the positions of the top K values.
-    topk_inverted_mask = torch.arange(topk_values.shape[1]).unsqueeze(0) < top_ks.unsqueeze(1).repeat(spec_length, 1)
-    topk_values[~topk_inverted_mask] = -float("inf")
+    topk_inverted_mask = torch.arange(topk_values.shape[1], device=device).unsqueeze(0) < top_ks.unsqueeze(1).repeat(spec_length, 1)
+    topk_values[~topk_inverted_mask] = torch.finfo(torch.float16).tiny
 
     # Top P
-    top_probs = torch.softmax(topk_values, dim=1)  # (batch_size * spec_length, vocab_size)
+    topk_values_asc = torch.flip(topk_values, dims=[1])
+    topk_indices_asc = torch.flip(topk_indices, dims=[1])
+    top_probs = torch.softmax(topk_values_asc, dim=1)  # (batch_size * spec_length, vocab_size)
     topk_probs_sum = torch.cumsum(top_probs, dim=1)
-    top_p_mask = topk_probs_sum > top_ps.unsqueeze(1).repeat(spec_length, 1)  # True values in
-    # this mask indicate the positions where the cumulative probability exceeds the
-    # threshold, and these values are set to -inf.
-    top_p_mask[:, 0] = False  # Keep at least one
-    top_probs = torch.where(top_p_mask, torch.tensor(0.0), top_probs)  # (batch_size * spec_length, vocab_size)
+    top_p_mask = topk_probs_sum <= 1 - top_ps.unsqueeze(1).repeat(spec_length, 1) 
+    top_p_mask[:, -1] = False
+    topk_values_asc[top_p_mask] = torch.finfo(torch.float16).tiny
 
-    # Min P
-    scaled_min_p = torch.mul(min_ps.repeat(spec_length), top_probs[:, 0])  # (batch_size * spec_length,)
-    top_probs = torch.where(top_probs < scaled_min_p.unsqueeze(1), torch.tensor(0.0), top_probs)  # (batch_size * spec_length, vocab_size)
+    logits = logits.scatter(1, topk_indices_asc, topk_values_asc)
 
-    # Scatter the top probs into the probs tensor
-    probs = torch.zeros(logits.shape, dtype=torch.float)
-    probs.scatter_(1, topk_indices, top_probs)  # (batch_size * spec_length, vocab_size)
+    # Softmax
+    probs = torch.softmax(logits, dim=1)  # (batch_size * spec_length, vocab_size)
 
     # Sample the next tokens
     greedy_samples = torch.argmax(probs, dim=-1, keepdim=True)  # Greedy Sampling
