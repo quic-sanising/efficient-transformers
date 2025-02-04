@@ -28,6 +28,7 @@ def sampler_forward(
     presence_penalties: Optional[torch.Tensor] = None,
     temperatures: Optional[torch.Tensor] = None,
     top_ks: Optional[torch.Tensor] = None,
+    top_ps: Optional[torch.Tensor] = None,
 ) -> Union[Tuple, CausalLMOutputWithPast]:
     # Perform Sampling
     batch_size, spec_length, vocab_size = input_logits.shape
@@ -69,9 +70,18 @@ def sampler_forward(
 
     # True values in this mask indicate the positions of the top K values.
     topk_inverted_mask = torch.arange(topk_values.shape[1]).unsqueeze(0) < top_ks.unsqueeze(1).repeat(spec_length, 1)
-    topk_values[~topk_inverted_mask] = -float("inf")
+    topk_values[~topk_inverted_mask] = torch.finfo(torch.float16).tiny
 
-    logits.scatter_(1, topk_indices, topk_values)  # (batch_size * spec_length, vocab_size)
+    # Top P
+    topk_values_asc = torch.flip(topk_values, dims=[1])
+    topk_indices_asc = torch.flip(topk_indices, dims=[1])
+    top_probs = torch.softmax(topk_values_asc, dim=1)  # (batch_size * spec_length, vocab_size)
+    topk_probs_sum = torch.cumsum(top_probs, dim=1)
+    top_p_mask = topk_probs_sum <= 1 - top_ps.unsqueeze(1).repeat(spec_length, 1) 
+    top_p_mask[:, -1] = False
+    topk_values_asc[top_p_mask] = torch.finfo(torch.float16).tiny
+
+    logits = logits.scatter(1, topk_indices_asc, topk_values_asc)
 
     # Softmax
     probs = torch.softmax(logits, dim=1)  # (batch_size * spec_length, vocab_size)
