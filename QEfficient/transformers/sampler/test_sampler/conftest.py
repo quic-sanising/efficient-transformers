@@ -93,6 +93,8 @@ def setup_data_top_ps(batch_size, vocab_size):
     return {
         "seed": seed,
         "logits": logits,
+        "batch_size": batch_size,
+        "vocab_size": vocab_size,
         "top_ks": top_ks,
         "top_ps": top_ps,
     }
