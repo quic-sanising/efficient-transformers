@@ -26,15 +26,16 @@ def test_cpu_vs_vllm_cpu(setup_data):
     temperatures = setup_data["temperatures"]
 
     top_ks = setup_data["top_ks"]
+    top_ps = setup_data["top_ps"]
 
     vllm_sampler = Sampler()
     sampling_metadata = SamplingMetadata(
         temperature=temperatures,
         all_greedy=False,
         all_random=False,
-        top_p=None,
+        top_p=top_ps,
         top_k=top_ks,
-        no_top_p=True,
+        no_top_p=False,
         no_top_k=False,
         generators=None,
         max_num_logprobs=0,
@@ -59,6 +60,7 @@ def test_cpu_vs_vllm_cpu(setup_data):
         presence_penalties,
         temperatures,
         top_ks,
+        top_ps,
     )
     vllm_output_logits, vllm_prompt_mask, vllm_output_mask = vllm_sampler(
         vllm_logits, sampling_metadata
