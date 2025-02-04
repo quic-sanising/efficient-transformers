@@ -185,6 +185,136 @@ def test_cpu_vs_qaic(setup_data_top_ks):
     ), "Output logits do not match"
 
 
+def test_gpu_vs_qaic(setup_data_top_ks):
+    print(setup_data_top_ks["seed"])
+
+    logits = setup_data_top_ks["logits"].cuda()
+    print("Logits", logits)
+    qaic_logits = deepcopy(setup_data_top_ks["logits"])
+    print("QAIC logits", qaic_logits)
+
+    top_ks = setup_data_top_ks["top_ks"].cuda()
+    qaic_top_ks = deepcopy(setup_data_top_ks["top_ks"])
+
+    batch_size = (setup_data_top_ks["batch_size"],)
+    vocab_size = (setup_data_top_ks["vocab_size"],)
+
+    qeff_output = sampler_forward(
+        None,
+        logits,
+        top_ks,
+    )
+    print(qeff_output)
+
+    inputs = {
+        # "input_ids": output_token_ids[:, -1:].detach().cpu().numpy(),
+        "input_logits": qaic_logits.detach().cpu().numpy(),
+        "top_ks": qaic_top_ks.detach().cpu().numpy(),
+    }
+    outputs = {
+        "logits": qaic_logits.detach().cpu().numpy(),
+    }
+    print("Inputs", inputs)
+    print("Outputs", outputs)
+    write_io_files(
+        inputs,
+        outputs,
+        "./io_data",
+        "data",
+        "top_ks",
+        True,
+        False,
+    )
+
+    class Sampler(nn.Module):
+        def __init__(self):
+            super(Sampler, self).__init__()
+            self.forward = sampler_forward
+
+    model = Sampler()
+    onnx_path = "./on_device_sampling_onnx/test_sampler_top_ks_hardware.onnx"
+    subprocess.run(["rm", "-rf", f"{onnx_path}"])
+    torch.onnx.export(
+        model,
+        (
+            None,
+            qaic_logits,
+            qaic_top_ks,
+        ),
+        onnx_path,
+        input_names=[
+            "input_logits",
+            "top_ks",
+        ],
+        output_names=[
+            "logits",
+        ],
+        dynamo=False,
+        verbose=True
+    )
+
+    qpc_dir_path = "./on_device_sampling_qpcs/"
+    compile_cmd = [
+        "/opt/qti-aic/exec/qaic-exec",
+        "-v",
+        "-aic-hw",
+        "-convert-to-fp16",
+        "-aic-num-cores=14",
+        "-aic-num-of-instances=1",
+        "-num-iter=100",
+        f"-m={onnx_path}",
+        "-stats-level=70",
+        "-aic-pmu-recipe=KernelUtil",
+        "-ddr-stats",
+        "-time-passes",
+        "-mxfp6-matmul",
+        "-aic-enable-depth-first",
+        "-retained-state=true",
+        "-aic-perf-metrics",
+        f"-aic-binary-dir={qpc_dir_path}",
+        "-aic-hw-version=2.0",
+        "-compile-only",
+    ]
+    subprocess.run(["rm", "-rf", f"{qpc_dir_path}"])
+    print("Compile command", " ".join(compile_cmd))
+    result = subprocess.run(compile_cmd, capture_output=True, text=True)
+    print(result)
+
+    cmd = [
+        "/opt/qti-aic/exec/qaic-api-test",
+        "-t",
+        f"{qpc_dir_path}",
+        "-n",
+        "10",
+        "--aic-profiling-type",
+        "raw_device_stats",
+        "--aic-profiling-start-iter",
+        "9",
+        "--aic-profiling-num-samples",
+        "1",
+        "--aic-batch-json-input",
+        "./io_data/top_ks.json",
+        "--write-output-dir",
+        "./outputs_from_qpcs/",
+    ]
+
+    qeff_output_offline = subprocess.run(cmd, capture_output=True, text=True)
+    print(qeff_output_offline)
+    # for k, v in qeff_output_offline.__dict__.items():
+    #     print(k, v)
+
+    hw_output_logits = torch.from_numpy(
+        np.fromfile("./outputs_from_qpcs/logits-activation-0-inf-0.bin", dtype=np.float32)
+    ).reshape(batch_size[0], 1, vocab_size[0])
+
+    print(qeff_output.logits)
+    print(hw_output_logits)
+
+    assert torch.allclose(
+        qeff_output.logits.cpu(), hw_output_logits, atol=1e-3
+    ), "Output logits do not match"
+
+
 def test_gpu_vs_vllm_gpu(setup_data_top_ks):
     print(setup_data_top_ks["seed"])
 
