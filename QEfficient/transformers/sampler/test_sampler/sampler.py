@@ -31,6 +31,7 @@ def sampler_forward(
     top_ps: Optional[torch.Tensor] = None,
 ) -> Union[Tuple, CausalLMOutputWithPast]:
     # Perform Sampling
+    device = input_logits.device
     batch_size, spec_length, vocab_size = input_logits.shape
     logits = input_logits.reshape(batch_size * spec_length, vocab_size)  # Reshape tensor to 2D
 
@@ -44,32 +45,29 @@ def sampler_forward(
         # TODO: For frequency retain state, first gather and then scatter
 
     # Repetition Penalty
-    if (repetition_penalties != 1.).any():
-        repetition_penalties = repetition_penalties.unsqueeze(1).repeat(spec_length, vocab_size)  # (batch_size,) -> (batch_size * spec_length, vocab_size)
-        repetition_penalty_retain_state = repetition_penalty_retain_state.repeat(spec_length, 1)  # (batch_size, vocab_size) -> (batch_size * spec_length, vocab_size)
-        repetition_penalties[~repetition_penalty_retain_state.bool()] = 1.0
-        logits = torch.where(
-            logits > 0, logits / repetition_penalties, logits * repetition_penalties
-        )
+    repetition_penalties = repetition_penalties.unsqueeze(1).repeat(spec_length, vocab_size)  # (batch_size,) -> (batch_size * spec_length, vocab_size)
+    repetition_penalty_retain_state = repetition_penalty_retain_state.repeat(spec_length, 1)  # (batch_size, vocab_size) -> (batch_size * spec_length, vocab_size)
+    repetition_penalties[~repetition_penalty_retain_state.bool()] = 1.0
+    logits = torch.where(
+        logits > 0, logits / repetition_penalties, logits * repetition_penalties
+    )
 
     # Presence Penalty
-    if (presence_penalties != 0.).any():
-        presence_penalties = presence_penalties.unsqueeze(1).repeat(spec_length, 1)  # (batch_size,) -> (batch_size * spec_length, 1)
-        presence_penalty_retain_state = presence_penalty_retain_state.repeat(spec_length, 1)  # (batch_size, vocab_size) -> (batch_size * spec_length, vocab_size)
-        logits -= presence_penalties * presence_penalty_retain_state
+    presence_penalties = presence_penalties.unsqueeze(1).repeat(spec_length, 1)  # (batch_size,) -> (batch_size * spec_length, 1)
+    presence_penalty_retain_state = presence_penalty_retain_state.repeat(spec_length, 1)  # (batch_size, vocab_size) -> (batch_size * spec_length, vocab_size)
+    logits -= presence_penalties * presence_penalty_retain_state
 
     # TODO: Frequency Penalty
 
     # Temperature Scaling
-    if (temperatures != 0).any():
-        temperatures = temperatures.unsqueeze(1).repeat(spec_length, 1)  # (batch_size,) -> (batch_size * spec_length, 1)
-        logits = torch.where(temperatures != 0, logits / temperatures, logits)
+    temperatures = temperatures.unsqueeze(1).repeat(spec_length, 1)  # (batch_size,) -> (batch_size * spec_length, 1)
+    logits = torch.where(temperatures != 0, logits / temperatures, logits)
 
     # Top K
     topk_values, topk_indices = torch.topk(logits, k=vocab_size, dim=1)  # (batch_size * spec_length, vocab_size)
 
     # True values in this mask indicate the positions of the top K values.
-    topk_inverted_mask = torch.arange(topk_values.shape[1]).unsqueeze(0) < top_ks.unsqueeze(1).repeat(spec_length, 1)
+    topk_inverted_mask = torch.arange(topk_values.shape[1], device=device).unsqueeze(0) < top_ks.unsqueeze(1).repeat(spec_length, 1)
     topk_values[~topk_inverted_mask] = torch.finfo(torch.float16).tiny
 
     # Top P

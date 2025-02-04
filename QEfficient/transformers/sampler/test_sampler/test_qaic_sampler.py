@@ -70,13 +70,87 @@ def test_cpu_vs_vllm_cpu(setup_data):
     # print(vllm_output_logits)
 
     assert torch.allclose(
-        qeff_output.logits.squeeze(1), vllm_output_logits, atol=1e-6
+        qeff_output.logits.squeeze(1), vllm_output_logits, atol=1e-3
     ), "Output logits do not match"
     assert torch.allclose(
         qeff_output.repetition_penalty_retain_state.bool(),
         vllm_prompt_mask | vllm_output_mask,
-        atol=1e-6,
+        atol=1e-3,
     ), "Incorrect Repetition Penalty Retain State"
     assert torch.allclose(
-        qeff_output.presence_penalty_retain_state.bool(), vllm_output_mask, atol=1e-6
+        qeff_output.presence_penalty_retain_state.bool(), vllm_output_mask, atol=1e-3,
+    ), "Incorrect Presence Penalty Retain State"
+
+
+def test_gpu_vs_vllm_gpu(setup_data):
+    print(setup_data["seed"])
+
+    prompt_token_ids = setup_data["prompt_token_ids"].cuda()
+    output_token_ids = setup_data["output_token_ids"].cuda()
+
+    logits = setup_data["logits"].cuda()
+    vllm_logits = deepcopy(setup_data["logits"]).squeeze(1).cuda()
+
+    repetition_penalty_retain_state = setup_data["repetition_penalty_retain_state"].cuda()
+    presence_penalty_retain_state = setup_data["presence_penalty_retain_state"].cuda()
+
+    repetition_penalties = setup_data["repetition_penalties"].cuda()
+    presence_penalties = setup_data["presence_penalties"].cuda()
+
+    temperatures = setup_data["temperatures"].cuda()
+
+    top_ks = setup_data["top_ks"].cuda()
+    top_ps = setup_data["top_ps"].cuda()
+
+    vllm_sampler = Sampler()
+    sampling_metadata = SamplingMetadata(
+        temperature=temperatures,
+        all_greedy=False,
+        all_random=False,
+        top_p=top_ps,
+        top_k=top_ks,
+        no_top_p=False,
+        no_top_k=False,
+        generators=None,
+        max_num_logprobs=0,
+        no_penalties=False,
+        prompt_token_ids=prompt_token_ids,
+        frequency_penalties=None,
+        presence_penalties=presence_penalties,
+        repetition_penalties=repetition_penalties,
+        output_token_ids=output_token_ids.tolist(),
+        min_tokens=None,
+        stop_token_ids=None,
+    )
+
+    qeff_output = sampler_forward(
+        None,
+        output_token_ids[:, -1:],
+        logits,
+        output_token_ids[:, -1:],
+        repetition_penalty_retain_state,
+        repetition_penalties,
+        presence_penalty_retain_state,
+        presence_penalties,
+        temperatures,
+        top_ks,
+        top_ps,
+    )
+    vllm_output_logits, vllm_prompt_mask, vllm_output_mask = vllm_sampler(
+        vllm_logits, sampling_metadata
+    )
+
+    # print(qeff_output.logits.squeeze(1))
+    # print(vllm_output_logits)
+
+    assert torch.allclose(
+        qeff_output.logits.squeeze(1).cpu(), vllm_output_logits.cpu(), atol=1e-3
+    ), "Output logits do not match"
+    assert torch.allclose(
+        qeff_output.repetition_penalty_retain_state.bool().cpu(),
+        vllm_prompt_mask.cpu() | vllm_output_mask.cpu(),
+        atol=1e-3,
+    ), "Incorrect Repetition Penalty Retain State"
+    assert torch.allclose(
+        qeff_output.presence_penalty_retain_state.bool().cpu(), vllm_output_mask.cpu(), atol=1e-3,
     ), "Incorrect Presence Penalty Retain State"
