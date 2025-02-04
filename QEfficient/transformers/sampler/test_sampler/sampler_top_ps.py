@@ -29,6 +29,7 @@ def sampler_forward(
     # print("-"*100)
 
     # Perform Sampling
+    device = input_logits.device
     batch_size, spec_length, vocab_size = input_logits.shape
     logits = input_logits.reshape(batch_size * spec_length, vocab_size)  # Reshape tensor to 2D
 
@@ -36,7 +37,7 @@ def sampler_forward(
     topk_values, topk_indices = torch.topk(logits, k=vocab_size, dim=1)  # (batch_size * spec_length, vocab_size)
 
     # True values in this mask indicate the positions of the top K values.
-    topk_inverted_mask = torch.arange(topk_values.shape[1]).unsqueeze(0) < top_ks.unsqueeze(1).repeat(spec_length, 1)
+    topk_inverted_mask = torch.arange(topk_values.shape[1], device=device).unsqueeze(0) < top_ks.unsqueeze(1).repeat(spec_length, 1)
     topk_values[~topk_inverted_mask] = torch.finfo(torch.float16).tiny
 
     # Top P
