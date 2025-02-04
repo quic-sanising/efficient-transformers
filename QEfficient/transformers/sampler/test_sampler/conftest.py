@@ -72,6 +72,8 @@ def setup_data_top_ks(batch_size, vocab_size):
 
     return {
         "seed": seed,
+        "batch_size": batch_size,
+        "vocab_size": vocab_size,
         "logits": logits,
         "top_ks": top_ks,
     }
@@ -121,6 +123,7 @@ def setup_data(sequence_length, batch_size, vocab_size, ctx_length):
     temperatures = torch.randint(1, 11, (batch_size,)) / 10.0
 
     top_ks = torch.randint(1, vocab_size, (batch_size,))  # Between 1 and vocab_size
+    top_ps = torch.randint(50, 100, (batch_size,)) / 100.0  # Between 0.50 and 0.99
 
 
     return {
@@ -138,4 +141,5 @@ def setup_data(sequence_length, batch_size, vocab_size, ctx_length):
         "presence_penalties": presence_penalties,
         "temperatures": temperatures,
         "top_ks": top_ks,
+        "top_ps": top_ps,
     }
