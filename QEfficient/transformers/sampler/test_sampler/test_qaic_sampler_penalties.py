@@ -426,3 +426,65 @@ def test_gpu_vs_qaic(setup_data_penalties):
     assert torch.allclose(
         qeff_output.presence_penalty_retain_state.cpu(), hw_presence_penalty_retain_state, atol=1e-6
     ), "Incorrect Presence Penalty Retain State"
+
+
+def test_gpu_vs_vllm_gpu(setup_data_penalties):
+    print(setup_data_penalties["seed"])
+
+    prompt_token_ids = setup_data_penalties["prompt_token_ids"].cuda()
+    output_token_ids = setup_data_penalties["output_token_ids"].cuda()
+
+    logits = setup_data_penalties["logits"].cuda()
+
+    repetition_penalty_retain_state = setup_data_penalties["repetition_penalty_retain_state"].cuda()
+    presence_penalty_retain_state = setup_data_penalties["presence_penalty_retain_state"].cuda()
+
+    repetition_penalties = setup_data_penalties["repetition_penalties"].cuda()
+    presence_penalties = setup_data_penalties["presence_penalties"].cuda()
+
+    vllm_sampler = Sampler()
+    sampling_metadata = SamplingMetadata(
+        temperature=None,
+        all_greedy=False,
+        all_random=False,
+        top_p=None,
+        top_k=None,
+        no_top_p=False,
+        no_top_k=False,
+        generators=None,
+        max_num_logprobs=0,
+        no_penalties=False,
+        prompt_token_ids=prompt_token_ids,
+        frequency_penalties=None,
+        presence_penalties=presence_penalties,
+        repetition_penalties=repetition_penalties,
+        output_token_ids=output_token_ids.tolist(),
+        min_tokens=None,
+        stop_token_ids=None,
+    )
+
+    qeff_output = sampler_forward(
+        None,
+        output_token_ids[:, -1:],
+        logits,
+        output_token_ids[:, -1:],
+        repetition_penalty_retain_state,
+        repetition_penalties,
+        presence_penalty_retain_state,
+        presence_penalties,
+    )
+    vllm_output_logits, vllm_prompt_mask, vllm_output_mask = vllm_sampler(
+        logits.squeeze(1), sampling_metadata
+    )
+
+    assert torch.allclose(
+        qeff_output.logits.squeeze(1).cpu(), vllm_output_logits.cpu(), atol=1e-6
+    ), "Output logits do not match"
+    assert torch.allclose(
+        qeff_output.repetition_penalty_retain_state.bool().cpu(),
+        vllm_prompt_mask.cpu() | vllm_output_mask.cpu(),
+        atol=1e-6,
+    ), "Incorrect Repetition Penalty Retain State"
+    assert torch.allclose(
+        qeff_output.presence_penalty_retain_state.bool().cpu(), vllm_output_mask.cpu(), atol=1e-6
+    ), "Incorrect Presence Penalty Retain State"
