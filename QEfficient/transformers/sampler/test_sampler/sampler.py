@@ -30,10 +30,20 @@ def sampler_forward(
     top_ks: Optional[torch.Tensor] = None,
     top_ps: Optional[torch.Tensor] = None,
 ) -> Union[Tuple, CausalLMOutputWithPast]:
-    # Perform Sampling
+    # Move to device
     device = input_logits.device
+    last_accepted_output_tokens = last_accepted_output_tokens.to(device)
+    repetition_penalty_retain_state = repetition_penalty_retain_state.to(device)
+    presence_penalty_retain_state = presence_penalty_retain_state.to(device)
+    repetition_penalties = repetition_penalties.to(device)
+    presence_penalties = presence_penalties.to(device)
+    temperatures = temperatures.to(device)
+    top_ks = top_ks.to(device)
+    top_ps = top_ps.to(device)
+
+    # Perform Sampling
     batch_size, spec_length, vocab_size = input_logits.shape
-    logits = input_logits.reshape(batch_size * spec_length, vocab_size)  # Reshape tensor to 2D
+    logits = input_logits.reshape(batch_size * spec_length, vocab_size).to(device)  # Reshape tensor to 2D
 
     if input_ids.shape[1] != spec_length:  # Prefill phase, initialize retained states
         repetition_penalty_retain_state = torch.mul(repetition_penalty_retain_state, 0)
