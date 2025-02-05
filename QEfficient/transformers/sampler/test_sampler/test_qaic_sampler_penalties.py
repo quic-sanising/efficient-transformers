@@ -172,6 +172,7 @@ def test_cpu_vs_qaic(setup_data_penalties):
             "presence_penalty_retain_state_RetainedState",
         ],
         dynamo=False,
+        verbose=True,
     )
 
     qpc_dir_path = "./on_device_sampling_qpcs/"
@@ -345,6 +346,7 @@ def test_gpu_vs_qaic(setup_data_penalties):
             "presence_penalty_retain_state_RetainedState",
         ],
         dynamo=False,
+        verbose=True,
     )
 
     qpc_dir_path = "./on_device_sampling_qpcs/"

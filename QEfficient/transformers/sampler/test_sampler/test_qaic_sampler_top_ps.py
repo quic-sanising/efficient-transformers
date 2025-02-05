@@ -129,7 +129,7 @@ def test_cpu_vs_qaic(setup_data_top_ps):
             "logits",
         ],
         dynamo=False,
-        verbose=True
+        verbose=True,
     )
 
     qpc_dir_path = "./on_device_sampling_qpcs/"
@@ -266,7 +266,7 @@ def test_gpu_vs_qaic(setup_data_top_ps):
             "logits",
         ],
         dynamo=False,
-        verbose=True
+        verbose=True,
     )
 
     qpc_dir_path = "./on_device_sampling_qpcs/"
