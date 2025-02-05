@@ -34,20 +34,18 @@ def sampler_forward(
     logits = input_logits.reshape(batch_size * spec_length, vocab_size)  # Reshape tensor to 2D
 
     # Top K
-    topk_values, topk_indices = torch.topk(logits, k=vocab_size, dim=1)  # (batch_size * spec_length, vocab_size)
+    topk_values_asc, topk_indices_asc = torch.topk(logits, k=vocab_size, dim=1, largest=False)  # (batch_size * spec_length, vocab_size)
 
-    # True values in this mask indicate the positions of the top K values.
-    topk_inverted_mask = torch.arange(topk_values.shape[1], device=device).unsqueeze(0) < top_ks.unsqueeze(1).repeat(spec_length, 1)
-    topk_values[~topk_inverted_mask] = torch.finfo(torch.float16).tiny
+    # True values in this mask indicate the positions of the non-top K values
+    topk_mask = torch.arange(topk_values_asc.shape[1], device=device).unsqueeze(0) < (topk_values_asc.size(1) - top_ks.to(torch.long)).unsqueeze(1).repeat(spec_length, 1)
+    topk_values_asc[topk_mask] = torch.finfo(torch.float16).min
 
     # Top P
-    topk_values_asc = torch.flip(topk_values, dims=[1])
-    topk_indices_asc = torch.flip(topk_indices, dims=[1])
     top_probs = torch.softmax(topk_values_asc, dim=1)  # (batch_size * spec_length, vocab_size)
     topk_probs_sum = torch.cumsum(top_probs, dim=1)
     top_p_mask = topk_probs_sum <= 1 - top_ps.unsqueeze(1).repeat(spec_length, 1) 
     top_p_mask[:, -1] = False
-    topk_values_asc[top_p_mask] = torch.finfo(torch.float16).tiny
+    topk_values_asc[top_p_mask] = torch.finfo(torch.float16).min
 
     logits = logits.scatter(1, topk_indices_asc, topk_values_asc)  # (batch_size * spec_length, vocab_size)
     logits = logits.reshape(batch_size, spec_length, vocab_size)
