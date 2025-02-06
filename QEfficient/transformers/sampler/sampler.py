@@ -218,6 +218,11 @@ def sampler_forward(
     top_p_mask[:, -1] = False
     topk_values_asc[top_p_mask] = torch.finfo(torch.float16).min
 
+    # Min P
+    scaled_min_p = torch.mul(min_ps.repeat(spec_length), top_probs[:, -1])  # (batch_size * spec_length,)
+    min_p_mask = top_probs < scaled_min_p.unsqueeze(1)
+    topk_values_asc[min_p_mask] = torch.finfo(torch.float16).min
+
     logits = logits.scatter(1, topk_indices_asc, topk_values_asc)
 
     # Softmax
