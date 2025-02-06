@@ -25,16 +25,17 @@ def sampler_forward(
     presence_penalty_retain_state: Optional[torch.Tensor] = None,
     presence_penalties: Optional[torch.Tensor] = None,
 ) -> Union[Tuple, CausalLMOutputWithPast]:
-    
-    # print("-"*100)
-    # params = locals()
-    # for param, value in params.items():
-    #     print(f"{param}: {value}")
-    # print("-"*100)
+    # Move to device
+    device = input_logits.device
+    last_accepted_output_tokens = last_accepted_output_tokens.to(device)
+    repetition_penalty_retain_state = repetition_penalty_retain_state.to(device)
+    presence_penalty_retain_state = presence_penalty_retain_state.to(device)
+    repetition_penalties = repetition_penalties.to(device)
+    presence_penalties = presence_penalties.to(device)
 
     # Perform Sampling
     batch_size, spec_length, vocab_size = input_logits.shape
-    logits = input_logits.reshape(batch_size * spec_length, vocab_size)  # Reshape tensor to 2D
+    logits = input_logits.reshape(batch_size * spec_length, vocab_size).to(device)  # Reshape tensor to 2D
 
     if input_ids.shape[1] != spec_length:
     # if num_logits_to_keep and spec_length > num_logits_to_keep:  # Prefill phase, initialize retained states
