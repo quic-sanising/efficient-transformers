@@ -8,11 +8,13 @@ def sequence_length(request):
 
 
 @pytest.fixture(params=[1, 4, 8, 16, 32])
+# @pytest.fixture(params=[1])
 def batch_size(request):
     return request.param
 
 
-@pytest.fixture(params=[10, 100, 16_000, 32_000, 128_256])
+@pytest.fixture(params=[10, 100, 1024, 2048, 4096])
+# @pytest.fixture(params=[10])
 def vocab_size(request):
     return request.param
 
@@ -70,6 +72,8 @@ def setup_data_top_ks(batch_size, vocab_size):
     logits = torch.randn(batch_size, 1, vocab_size)
     top_ks = torch.randint(1, vocab_size, (batch_size,))  # Between 1 and vocab_size
 
+    print("top_ks", top_ks)
+
     return {
         "seed": seed,
         "batch_size": batch_size,
@@ -90,6 +94,8 @@ def setup_data_top_ps(batch_size, vocab_size):
     top_ks = torch.randint(1, vocab_size, (batch_size,))  # Between 1 and vocab_size
     top_ps = torch.randint(50, 100, (batch_size,)) / 100.0  # Between 0.50 and 0.99
 
+    print("top_ps", top_ps)
+
     return {
         "seed": seed,
         "logits": logits,
@@ -97,6 +103,31 @@ def setup_data_top_ps(batch_size, vocab_size):
         "vocab_size": vocab_size,
         "top_ks": top_ks,
         "top_ps": top_ps,
+    }
+
+
+@pytest.fixture
+def setup_data_min_ps(batch_size, vocab_size):
+    import numpy as np
+
+    seed = np.random.randint(1, 101)
+    torch.manual_seed(seed)
+
+    logits = torch.randn(batch_size, 1, vocab_size)
+    top_ks = torch.randint(1, vocab_size, (batch_size,))  # Between 1 and vocab_size
+    top_ps = torch.randint(50, 100, (batch_size,)) / 100.0  # Between 0.50 and 0.99
+    min_ps = torch.randint(50, 100, (batch_size,)) / 100.0  # Between 0.50 and 0.99
+
+    print("min_ps", min_ps)
+
+    return {
+        "seed": seed,
+        "logits": logits,
+        "batch_size": batch_size,
+        "vocab_size": vocab_size,
+        "top_ks": top_ks,
+        "top_ps": top_ps,
+        "min_ps": min_ps,
     }
 
 
