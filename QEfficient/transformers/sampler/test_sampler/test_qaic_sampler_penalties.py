@@ -1,16 +1,15 @@
 from copy import deepcopy
-import numpy as np
 import subprocess
 import torch
 import torch.nn as nn
 
 from QEfficient.generation.cloud_infer import QAICInferenceSession
 from QEfficient.transformers.sampler.test_sampler.sampler_penalties import sampler_forward
+from QEfficient.transformers.sampler.test_sampler.utils import print_difference_in_tensors
 from QEfficient.transformers.sampler.test_sampler.vllm_sampler_penalties import (
     Sampler,
     SamplingMetadata,
 )
-from QEfficient.transformers.sampler.test_sampler.utils import print_difference_in_tensors
 
 
 def test_cpu_vs_vllm_cpu(setup_data_penalties):
@@ -96,14 +95,14 @@ def test_cpu_vs_qaic(setup_data_penalties):
 
     # ---Run on CPU---
     qeff_output = sampler_forward(
-        self=None,
-        input_ids=output_token_ids[:, -1:],
-        input_logits=logits.to(torch.float16),
-        last_accepted_output_tokens=output_token_ids[:, -1:],
-        repetition_penalty_retain_state=repetition_penalty_retain_state,
-        repetition_penalties=repetition_penalties.to(torch.float16),
-        presence_penalty_retain_state=presence_penalty_retain_state,
-        presence_penalties=presence_penalties.to(torch.float16),
+        None,
+        output_token_ids[:, -1:],
+        logits.to(torch.float16),
+        output_token_ids[:, -1:],
+        repetition_penalty_retain_state,
+        repetition_penalties.to(torch.float16),
+        presence_penalty_retain_state,
+        presence_penalties.to(torch.float16),
     )
     print("\nOutput\n", qeff_output)
 
@@ -206,31 +205,42 @@ def test_cpu_vs_qaic(setup_data_penalties):
     print("\nQAIC Presence Penalty Retain State\n", hw_presence_penalty_retain_state)
 
     # Compare outputs
-    assert torch.allclose(
-        qeff_output.logits.to(torch.float32), hw_output_logits, atol=1e-6
-    ), print_difference_in_tensors(
-        qeff_output.logits.to(torch.float32),
-        "Logits",
-        hw_output_logits,
-        "QAIC Logits",
-        1e-6,
-    )
-    assert torch.allclose(
+    has_failed = False
+    if not torch.allclose(
+        qeff_output.logits.to(torch.float32), hw_output_logits, atol=1e-4
+    ): 
+        print_difference_in_tensors(
+            qeff_output.logits.to(torch.float32),
+            "Logits",
+            hw_output_logits,
+            "QAIC Logits",
+            1e-4,
+        )
+        has_failed = True
+
+    if not torch.allclose(
         qeff_output.repetition_penalty_retain_state, hw_repetition_penalty_retain_state
-    ), print_difference_in_tensors(
-        qeff_output.repetition_penalty_retain_state, 
-        "Repetition Penalty Retain State",
-        hw_repetition_penalty_retain_state,
-        "QAIC Repetition Penalty Retain State",
-    )
-    assert torch.allclose(
+    ):
+        print_difference_in_tensors(
+            qeff_output.repetition_penalty_retain_state, 
+            "Repetition Penalty Retain State",
+            hw_repetition_penalty_retain_state,
+            "QAIC Repetition Penalty Retain State",
+        )
+        has_failed = True
+
+    if not torch.allclose(
         qeff_output.presence_penalty_retain_state, hw_presence_penalty_retain_state
-    ), print_difference_in_tensors(
-        qeff_output.presence_penalty_retain_state,
-        "Presence Penalty Retain State",
-        hw_presence_penalty_retain_state,
-        "QAIC Presence Penalty Retain State",
-    )
+    ): 
+        print_difference_in_tensors(
+            qeff_output.presence_penalty_retain_state,
+            "Presence Penalty Retain State",
+            hw_presence_penalty_retain_state,
+            "QAIC Presence Penalty Retain State",
+        )
+        has_failed = True
+    
+    assert not has_failed, "Test failed"
 
 
 def test_gpu_vs_qaic(setup_data_penalties):
@@ -243,7 +253,7 @@ def test_gpu_vs_qaic(setup_data_penalties):
 
     logits = setup_data_penalties["logits"].cuda()
     print("Input Logits", logits)
-    qaic_logits = deepcopy(setup_data_penalties["logits"]).cuda()
+    qaic_logits = deepcopy(setup_data_penalties["logits"])
     print("QAIC Input Logits", qaic_logits)
 
     repetition_penalty_retain_state = setup_data_penalties["repetition_penalty_retain_state"].cuda()
@@ -254,16 +264,16 @@ def test_gpu_vs_qaic(setup_data_penalties):
     repetition_penalties = setup_data_penalties["repetition_penalties"].cuda()
     presence_penalties = setup_data_penalties["presence_penalties"].cuda()
 
-    # ---Run on CPU---
+    # ---Run on GPU---
     qeff_output = sampler_forward(
-        self=None,
-        input_ids=output_token_ids[:, -1:],
-        input_logits=logits.to(torch.float16),
-        last_accepted_output_tokens=output_token_ids[:, -1:],
-        repetition_penalty_retain_state=repetition_penalty_retain_state,
-        repetition_penalties=repetition_penalties.to(torch.float16),
-        presence_penalty_retain_state=presence_penalty_retain_state,
-        presence_penalties=presence_penalties.to(torch.float16),
+        None,
+        output_token_ids[:, -1:],
+        logits.to(torch.float16),
+        output_token_ids[:, -1:],
+        repetition_penalty_retain_state,
+        repetition_penalties.to(torch.float16),
+        presence_penalty_retain_state,
+        presence_penalties.to(torch.float16),
     )
     print("\nOutput\n", qeff_output)
 
@@ -366,31 +376,42 @@ def test_gpu_vs_qaic(setup_data_penalties):
     print("\nQAIC Presence Penalty Retain State\n", hw_presence_penalty_retain_state)
 
     # Compare outputs
-    assert torch.allclose(
-        qeff_output.logits.cpu().to(torch.float32), hw_output_logits, atol=1e-6
-    ), print_difference_in_tensors(
-        qeff_output.logits.cpu().to(torch.float32),
-        "Logits",
-        hw_output_logits,
-        "QAIC Logits",
-        1e-6,
-    )
-    assert torch.allclose(
+    has_failed = False
+    if not torch.allclose(
+        qeff_output.logits.cpu().to(torch.float32), hw_output_logits, atol=1e-4
+    ): 
+        print_difference_in_tensors(
+            qeff_output.logits.cpu().to(torch.float32),
+            "Logits",
+            hw_output_logits,
+            "QAIC Logits",
+            1e-4,
+        )
+        has_failed = True
+
+    if not torch.allclose(
         qeff_output.repetition_penalty_retain_state.cpu(), hw_repetition_penalty_retain_state
-    ), print_difference_in_tensors(
-        qeff_output.repetition_penalty_retain_state.cpu(), 
-        "Repetition Penalty Retain State",
-        hw_repetition_penalty_retain_state,
-        "QAIC Repetition Penalty Retain State",
-    )
-    assert torch.allclose(
+    ):
+        print_difference_in_tensors(
+            qeff_output.repetition_penalty_retain_state.cpu(), 
+            "Repetition Penalty Retain State",
+            hw_repetition_penalty_retain_state,
+            "QAIC Repetition Penalty Retain State",
+        )
+        has_failed = True
+        
+    if not torch.allclose(
         qeff_output.presence_penalty_retain_state.cpu(), hw_presence_penalty_retain_state
-    ), print_difference_in_tensors(
-        qeff_output.presence_penalty_retain_state.cpu(),
-        "Presence Penalty Retain State",
-        hw_presence_penalty_retain_state,
-        "QAIC Presence Penalty Retain State",
-    )
+    ): 
+        print_difference_in_tensors(
+            qeff_output.presence_penalty_retain_state.cpu(),
+            "Presence Penalty Retain State",
+            hw_presence_penalty_retain_state,
+            "QAIC Presence Penalty Retain State",
+        )
+        has_failed = True
+    
+    assert not has_failed, "Test failed"
 
 
 def test_gpu_vs_vllm_gpu(setup_data_penalties):

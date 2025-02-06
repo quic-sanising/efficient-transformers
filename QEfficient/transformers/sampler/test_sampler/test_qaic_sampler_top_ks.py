@@ -1,11 +1,11 @@
 from copy import deepcopy
-import numpy as np
 import subprocess
 import torch
 import torch.nn as nn
 
-from QEfficient.transformers.sampler.test_sampler.make_inputs import write_io_files
+from QEfficient.generation.cloud_infer import QAICInferenceSession
 from QEfficient.transformers.sampler.test_sampler.sampler_top_ks import sampler_forward
+from QEfficient.transformers.sampler.test_sampler.utils import print_difference_in_tensors
 from QEfficient.transformers.sampler.test_sampler.vllm_sampler_topkp import (
     Sampler,
     SamplingMetadata,
@@ -59,48 +59,28 @@ def test_cpu_vs_qaic(setup_data_top_ks):
     print(setup_data_top_ks["seed"])
 
     logits = setup_data_top_ks["logits"]
-    print("Logits", logits)
+    print("Input Logits", logits)
     qaic_logits = deepcopy(setup_data_top_ks["logits"])
-    print("QAIC logits", qaic_logits)
+    print("QAIC Input Logits", qaic_logits)
 
     top_ks = setup_data_top_ks["top_ks"]
     qaic_top_ks = deepcopy(setup_data_top_ks["top_ks"])
 
-    batch_size = (setup_data_top_ks["batch_size"],)
-    vocab_size = (setup_data_top_ks["vocab_size"],)
-
+    # ---Run on CPU---
     qeff_output = sampler_forward(
         None,
-        logits,
+        logits.to(torch.float16),
         top_ks,
     )
-    print(qeff_output)
+    print("\nOutput\n", qeff_output)
 
-    inputs = {
-        # "input_ids": output_token_ids[:, -1:].detach().cpu().numpy(),
-        "input_logits": qaic_logits.detach().cpu().numpy(),
-        "top_ks": qaic_top_ks.detach().cpu().numpy(),
-    }
-    outputs = {
-        "logits": qaic_logits.detach().cpu().numpy(),
-    }
-    print("Inputs", inputs)
-    print("Outputs", outputs)
-    write_io_files(
-        inputs,
-        outputs,
-        "./io_data",
-        "data",
-        "top_ks",
-        True,
-        False,
-    )
-
+    # ---Run on QAIC---
     class Sampler(nn.Module):
         def __init__(self):
             super(Sampler, self).__init__()
             self.forward = sampler_forward
 
+    # Export ONNX file
     model = Sampler()
     onnx_path = "./on_device_sampling_onnx/test_sampler_top_ks_hardware.onnx"
     subprocess.run(["rm", "-rf", f"{onnx_path}"])
@@ -123,6 +103,7 @@ def test_cpu_vs_qaic(setup_data_top_ks):
         verbose=True,
     )
 
+    # Compile QPC file
     qpc_dir_path = "./on_device_sampling_qpcs/"
     compile_cmd = [
         "/opt/qti-aic/exec/qaic-exec",
@@ -147,90 +128,65 @@ def test_cpu_vs_qaic(setup_data_top_ks):
     ]
     subprocess.run(["rm", "-rf", f"{qpc_dir_path}"])
     print("Compile command", " ".join(compile_cmd))
-    result = subprocess.run(compile_cmd, capture_output=True, text=True)
-    print(result)
+    result = subprocess.run(compile_cmd, capture_output=True, text=True)    
+    print(result.stdout)
+    if (result.returncode != 0):
+        print(result.stderr)
 
-    cmd = [
-        "/opt/qti-aic/exec/qaic-api-test",
-        "-t",
-        f"{qpc_dir_path}",
-        "-n",
-        "1",
-        "--aic-profiling-type",
-        "raw_device_stats",
-        "--aic-profiling-start-iter",
-        "1",
-        "--aic-profiling-num-samples",
-        "1",
-        "--aic-batch-json-input",
-        "./io_data/top_ks.json",
-        "--write-output-dir",
-        "./outputs_from_qpcs/",
-    ]
+    # Run QPC file
+    session = QAICInferenceSession(qpc_path=qpc_dir_path, device_ids=[0], enable_debug_logs=False)
+    inputs = {
+        # "input_ids": output_token_ids[:, -1:].detach().cpu().numpy(),
+        "input_logits": qaic_logits.detach().cpu().numpy(),
+        "top_ks": qaic_top_ks.detach().cpu().numpy(),
+    }
+    print("\nQAIC Input\n", inputs)
+    outputs = session.run(inputs)
+    print("\nQAIC Output\n", outputs)
 
-    qeff_output_offline = subprocess.run(cmd, capture_output=True, text=True)
-    print(qeff_output_offline)
-    # for k, v in qeff_output_offline.__dict__.items():
-    #     print(k, v)
+    hw_output_logits = torch.from_numpy(outputs["logits"])
 
-    hw_output_logits = torch.from_numpy(
-        np.fromfile("./outputs_from_qpcs/logits-activation-0-inf-0.bin", dtype=np.float32)
-    ).reshape(batch_size[0], 1, vocab_size[0])
+    print("\nLogits\n", qeff_output.logits)
+    print("\nQAIC Logits\n", hw_output_logits)
 
-    print(qeff_output.logits)
-    print(hw_output_logits)
-
+    # Compare outputs
     assert torch.allclose(
-        qeff_output.logits, hw_output_logits, atol=1e-3
-    ), "Output logits do not match"
+        qeff_output.logits.to(torch.float32), hw_output_logits, atol=1e-4
+    ), print_difference_in_tensors(
+        qeff_output.logits.to(torch.float32),
+        "Logits",
+        hw_output_logits,
+        "QAIC Logits",
+        1e-4,
+    )
 
 
 def test_gpu_vs_qaic(setup_data_top_ks):
     print(setup_data_top_ks["seed"])
 
     logits = setup_data_top_ks["logits"].cuda()
-    print("Logits", logits)
+    print("Input Logits", logits)
     qaic_logits = deepcopy(setup_data_top_ks["logits"])
-    print("QAIC logits", qaic_logits)
+    print("QAIC Input Logits", qaic_logits)
 
     top_ks = setup_data_top_ks["top_ks"].cuda()
     qaic_top_ks = deepcopy(setup_data_top_ks["top_ks"])
 
-    batch_size = (setup_data_top_ks["batch_size"],)
-    vocab_size = (setup_data_top_ks["vocab_size"],)
-
+    # ---Run on GPU---
     qeff_output = sampler_forward(
         None,
-        logits,
+        logits.to(torch.float16),
         top_ks,
     )
-    print(qeff_output)
+    print("\nOutput\n", qeff_output)
 
-    inputs = {
-        # "input_ids": output_token_ids[:, -1:].detach().cpu().numpy(),
-        "input_logits": qaic_logits.detach().cpu().numpy(),
-        "top_ks": qaic_top_ks.detach().cpu().numpy(),
-    }
-    outputs = {
-        "logits": qaic_logits.detach().cpu().numpy(),
-    }
-    print("Inputs", inputs)
-    print("Outputs", outputs)
-    write_io_files(
-        inputs,
-        outputs,
-        "./io_data",
-        "data",
-        "top_ks",
-        True,
-        False,
-    )
-
+    # ---Run on QAIC---
     class Sampler(nn.Module):
         def __init__(self):
             super(Sampler, self).__init__()
             self.forward = sampler_forward
 
+    # Export ONNX file
     model = Sampler()
     onnx_path = "./on_device_sampling_onnx/test_sampler_top_ks_hardware.onnx"
     subprocess.run(["rm", "-rf", f"{onnx_path}"])
@@ -253,6 +209,7 @@ def test_gpu_vs_qaic(setup_data_top_ks):
         verbose=True,
     )
 
+    # Compile QPC file
     qpc_dir_path = "./on_device_sampling_qpcs/"
     compile_cmd = [
         "/opt/qti-aic/exec/qaic-exec",
@@ -277,42 +234,37 @@ def test_gpu_vs_qaic(setup_data_top_ks):
     ]
     subprocess.run(["rm", "-rf", f"{qpc_dir_path}"])
     print("Compile command", " ".join(compile_cmd))
-    result = subprocess.run(compile_cmd, capture_output=True, text=True)
-    print(result)
+    result = subprocess.run(compile_cmd, capture_output=True, text=True)    
+    print(result.stdout)
+    if (result.returncode != 0):
+        print(result.stderr)
 
-    cmd = [
-        "/opt/qti-aic/exec/qaic-api-test",
-        "-t",
-        f"{qpc_dir_path}",
-        "-n",
-        "1",
-        "--aic-profiling-type",
-        "raw_device_stats",
-        "--aic-profiling-start-iter",
-        "1",
-        "--aic-profiling-num-samples",
-        "1",
-        "--aic-batch-json-input",
-        "./io_data/top_ks.json",
-        "--write-output-dir",
-        "./outputs_from_qpcs/",
-    ]
+    # Run QPC file
+    session = QAICInferenceSession(qpc_path=qpc_dir_path, device_ids=[0], enable_debug_logs=False)
+    inputs = {
+        # "input_ids": output_token_ids[:, -1:].detach().cpu().numpy(),
+        "input_logits": qaic_logits.detach().cpu().numpy(),
+        "top_ks": qaic_top_ks.detach().cpu().numpy(),
+    }
+    print("\nQAIC Input\n", inputs)
+    outputs = session.run(inputs)
+    print("\nQAIC Output\n", outputs)
 
-    qeff_output_offline = subprocess.run(cmd, capture_output=True, text=True)
-    print(qeff_output_offline)
-    # for k, v in qeff_output_offline.__dict__.items():
-    #     print(k, v)
+    hw_output_logits = torch.from_numpy(outputs["logits"])
 
-    hw_output_logits = torch.from_numpy(
-        np.fromfile("./outputs_from_qpcs/logits-activation-0-inf-0.bin", dtype=np.float32)
-    ).reshape(batch_size[0], 1, vocab_size[0])
+    print("\nLogits\n", qeff_output.logits)
+    print("\nQAIC Logits\n", hw_output_logits)
 
-    print(qeff_output.logits)
-    print(hw_output_logits)
-
+    # Compare outputs
     assert torch.allclose(
-        qeff_output.logits.cpu(), hw_output_logits, atol=1e-3
-    ), "Output logits do not match"
+        qeff_output.logits.cpu().to(torch.float32), hw_output_logits, atol=1e-4
+    ), print_difference_in_tensors(
+        qeff_output.logits.cpu().to(torch.float32),
+        "Logits",
+        hw_output_logits,
+        "QAIC Logits",
+        1e-4,
+    )
 
 
 def test_gpu_vs_vllm_gpu(setup_data_top_ks):
