@@ -31,6 +31,7 @@ def test_cpu_vs_vllm_cpu(setup_data):
 
     top_ks = setup_data["top_ks"]
     top_ps = setup_data["top_ps"]
+    min_ps = setup_data["min_ps"]
 
     vllm_sampler = Sampler()
     sampling_metadata = SamplingMetadata(
@@ -39,8 +40,10 @@ def test_cpu_vs_vllm_cpu(setup_data):
         all_random=False,
         top_p=top_ps,
         top_k=top_ks,
+        min_p=min_ps,
         no_top_p=False,
         no_top_k=False,
+        no_min_p=False,
         generators=None,
         max_num_logprobs=0,
         no_penalties=False,
@@ -65,6 +68,7 @@ def test_cpu_vs_vllm_cpu(setup_data):
         temperatures,
         top_ks,
         top_ps,
+        min_ps,
     )
     vllm_output_logits, vllm_prompt_mask, vllm_output_mask = vllm_sampler(
         vllm_logits, sampling_metadata
@@ -109,6 +113,7 @@ def test_cpu_vs_qaic(setup_data):
 
     top_ks = setup_data["top_ks"]
     top_ps = setup_data["top_ps"]
+    min_ps = setup_data["min_ps"]
 
     # ---Run on CPU---
     qeff_output = sampler_forward(
@@ -123,6 +128,7 @@ def test_cpu_vs_qaic(setup_data):
         temperatures.to(torch.float16),
         top_ks,
         top_ps,
+        min_ps,
     )
     print("\nOutput\n", qeff_output)
 
@@ -150,6 +156,7 @@ def test_cpu_vs_qaic(setup_data):
             temperatures,
             top_ks,
             top_ps,
+            min_ps,
         ),
         onnx_path,
         input_names=[
@@ -163,6 +170,7 @@ def test_cpu_vs_qaic(setup_data):
             "temperatures",
             "top_ks",
             "top_ps",
+            "min_ps",
         ],
         output_names=[
             "logits",
@@ -215,6 +223,7 @@ def test_cpu_vs_qaic(setup_data):
         "temperatures": temperatures.detach().cpu().numpy(),
         "top_ks": top_ks.detach().cpu().numpy(),
         "top_ps": top_ps.detach().cpu().numpy(),
+        "min_ps": min_ps.detach().cpu().numpy(),
     }
     print("\nQAIC Input\n", inputs)
     outputs = session.run(inputs)
@@ -295,6 +304,7 @@ def test_gpu_vs_qaic(setup_data):
 
     top_ks = setup_data["top_ks"].cuda()
     top_ps = setup_data["top_ps"].cuda()
+    min_ps = setup_data["min_ps"].cuda()
 
     # ---Run on GPU---
     qeff_output = sampler_forward(
@@ -309,6 +319,7 @@ def test_gpu_vs_qaic(setup_data):
         temperatures.to(torch.float16),
         top_ks,
         top_ps,
+        min_ps,
     )
     print("\nOutput\n", qeff_output)
 
@@ -336,6 +347,7 @@ def test_gpu_vs_qaic(setup_data):
             temperatures,
             top_ks,
             top_ps,
+            min_ps,
         ),
         onnx_path,
         input_names=[
@@ -349,6 +361,7 @@ def test_gpu_vs_qaic(setup_data):
             "temperatures",
             "top_ks",
             "top_ps",
+            "min_ps",
         ],
         output_names=[
             "logits",
@@ -401,6 +414,7 @@ def test_gpu_vs_qaic(setup_data):
         "temperatures": temperatures.detach().cpu().numpy(),
         "top_ks": top_ks.detach().cpu().numpy(),
         "top_ps": top_ps.detach().cpu().numpy(),
+        "min_ps": min_ps.detach().cpu().numpy(),
     }
     print("\nQAIC Input\n", inputs)
     outputs = session.run(inputs)
@@ -477,6 +491,7 @@ def test_gpu_vs_vllm_gpu(setup_data):
 
     top_ks = setup_data["top_ks"].cuda()
     top_ps = setup_data["top_ps"].cuda()
+    min_ps = setup_data["min_ps"].cuda()
 
     vllm_sampler = Sampler()
     sampling_metadata = SamplingMetadata(
@@ -485,8 +500,10 @@ def test_gpu_vs_vllm_gpu(setup_data):
         all_random=False,
         top_p=top_ps,
         top_k=top_ks,
+        min_p=min_ps,
         no_top_p=False,
         no_top_k=False,
+        no_min_p=False,
         generators=None,
         max_num_logprobs=0,
         no_penalties=False,
@@ -511,6 +528,7 @@ def test_gpu_vs_vllm_gpu(setup_data):
         temperatures,
         top_ks,
         top_ps,
+        min_ps,
     )
     vllm_output_logits, vllm_prompt_mask, vllm_output_mask = vllm_sampler(
         vllm_logits, sampling_metadata

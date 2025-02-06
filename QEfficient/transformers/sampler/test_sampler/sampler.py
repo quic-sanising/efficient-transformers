@@ -29,6 +29,7 @@ def sampler_forward(
     temperatures: Optional[torch.Tensor] = None,
     top_ks: Optional[torch.Tensor] = None,
     top_ps: Optional[torch.Tensor] = None,
+    min_ps: Optional[torch.Tensor] = None,
 ) -> Union[Tuple, CausalLMOutputWithPast]:
     # Move to device
     device = input_logits.device
@@ -40,6 +41,7 @@ def sampler_forward(
     temperatures = temperatures.to(device)
     top_ks = top_ks.to(device)
     top_ps = top_ps.to(device)
+    min_ps = min_ps.to(device)
 
     # Perform Sampling
     batch_size, spec_length, vocab_size = input_logits.shape
@@ -86,6 +88,11 @@ def sampler_forward(
     top_p_mask = topk_probs_sum <= 1 - top_ps.unsqueeze(1).repeat(spec_length, 1) 
     top_p_mask[:, -1] = False
     topk_values_asc[top_p_mask] = torch.finfo(torch.float16).min
+
+    # Min P
+    scaled_min_p = torch.mul(min_ps.repeat(spec_length), top_probs[:, -1])  # (batch_size * spec_length,)
+    min_p_mask = top_probs < scaled_min_p.unsqueeze(1)
+    topk_values_asc[min_p_mask] = torch.finfo(torch.float16).min
 
     logits = logits.scatter(1, topk_indices_asc, topk_values_asc)
 

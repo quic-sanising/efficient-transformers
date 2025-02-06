@@ -157,7 +157,7 @@ def setup_data(sequence_length, batch_size, vocab_size, ctx_length):
 
     top_ks = torch.randint(1, vocab_size, (batch_size,))  # Between 1 and vocab_size
     top_ps = torch.randint(50, 100, (batch_size,)) / 100.0  # Between 0.50 and 0.99
-
+    min_ps = torch.randint(50, 100, (batch_size,)) / 100.0  # Between 0.50 and 0.99
 
     return {
         "seed": seed,
@@ -175,4 +175,5 @@ def setup_data(sequence_length, batch_size, vocab_size, ctx_length):
         "temperatures": temperatures,
         "top_ks": top_ks,
         "top_ps": top_ps,
+        "min_ps": min_ps,
     }

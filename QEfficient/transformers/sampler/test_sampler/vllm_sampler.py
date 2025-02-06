@@ -18,8 +18,10 @@ class SamplingMetadata:
 
     top_p: torch.Tensor
     top_k: torch.Tensor
+    min_p: torch.Tensor
     no_top_p: bool
     no_top_k: bool
+    no_min_p: bool
 
     generators: Dict[int, torch.Generator]
 
@@ -63,6 +65,8 @@ class TopKTopPSampler(nn.Module):
         k: torch.Tensor,
         no_top_p: bool,
         p: torch.Tensor,
+        no_min_p: bool,
+        min_p: torch.Tensor,
     ) -> torch.Tensor:
         """PyTorch-native implementation of top-k and top-p sampling."""
         
@@ -73,6 +77,8 @@ class TopKTopPSampler(nn.Module):
         # print("-"*100)
 
         logits = apply_top_k_top_p(logits, no_top_k, k, no_top_p, p)
+        if not no_min_p:
+            logits = apply_min_p(logits, min_p)
         probs = logits.softmax(dim=-1, dtype=torch.float32)
         return probs
 
@@ -111,6 +117,23 @@ def apply_top_k_top_p(
 
     # Re-sort the probabilities.
     logits = logits_sort.scatter(dim=-1, index=logits_idx, src=logits_sort)
+    return logits
+
+
+def apply_min_p(
+    logits: torch.Tensor,
+    min_p: torch.Tensor,
+) -> torch.Tensor:
+    """
+    Adapted from
+    https://github.com/oobabooga/text-generation-webui/blob/3146124ec01f02c8fb1650a6517cf1b60b537aaf/modules/sampler_hijack.py#L16C17-L16C17
+    """
+    probs = torch.softmax(logits, dim=-1)
+    top_probs, _ = probs.max(dim=-1, keepdim=True)
+    scaled_min_p = min_p.unsqueeze_(dim=1) * top_probs
+    tokens_to_remove = probs < scaled_min_p
+    logits = logits.masked_fill_(tokens_to_remove, torch.finfo(torch.float16).min)
+
     return logits
 
 
@@ -232,6 +255,8 @@ class Sampler(nn.Module):
             sampling_metadata.top_k,
             sampling_metadata.no_top_p,
             sampling_metadata.top_p,
+            sampling_metadata.no_min_p,
+            sampling_metadata.min_p,
         )
     # def sample(
     #     self,
