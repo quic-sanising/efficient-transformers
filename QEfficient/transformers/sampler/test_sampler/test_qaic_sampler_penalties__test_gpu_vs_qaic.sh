@@ -22,7 +22,7 @@ for sequence_length in "${sequence_lengths[@]}"; do
           --sequence-length=$sequence_length \
           --batch-size=$batch_size \
           --vocab-size=$vocab_size \
-          --ctx-length=$ctx_length \ 2>&1 | tee -a $output_file
+          --ctx-length=$ctx_length 2>&1 | tee -a $output_file
       done
     done
   done
