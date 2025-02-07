@@ -2,26 +2,62 @@ import pytest
 import torch
 
 
-@pytest.fixture(params=[8, 16, 64, 128])
-def sequence_length(request):
-    return request.param
+def pytest_addoption(parser):
+    parser.addoption("--sequence-length", type=int, default=None)
+    parser.addoption("--batch-size", type=int, default=None)
+    parser.addoption("--vocab-size", type=int, default=None)
+    parser.addoption("--ctx-length", type=int, default=None)
 
 
-@pytest.fixture(params=[1, 4, 8, 16, 32])
-# @pytest.fixture(params=[1])
-def batch_size(request):
-    return request.param
+def pytest_generate_tests(metafunc):
+    if 'sequence_length' in metafunc.fixturenames:
+        metafunc.parametrize("sequence_length", [metafunc.config.option.sequence_length])
+    if 'batch_size' in metafunc.fixturenames:
+        metafunc.parametrize("batch_size", [metafunc.config.option.batch_size])
+    if 'vocab_size' in metafunc.fixturenames:
+        metafunc.parametrize("vocab_size", [metafunc.config.option.vocab_size])
+    if 'ctx_length' in metafunc.fixturenames:
+        metafunc.parametrize("ctx_length", [metafunc.config.option.ctx_length])
 
 
-@pytest.fixture(params=[10, 100, 1024, 2048, 4096])
-# @pytest.fixture(params=[10])
-def vocab_size(request):
-    return request.param
+@pytest.fixture(scope="session")
+def sequence_length(pytestconfig):
+    return pytestconfig.getoption("sequence_length")
 
 
-@pytest.fixture(params=[128, 512, 4096, 8192])
-def ctx_length(request, sequence_length):
-    return max(request.param, sequence_length + 1)
+@pytest.fixture(scope="session")
+def batch_size(pytestconfig):
+    return pytestconfig.getoption("batch_size")
+
+
+@pytest.fixture(scope="session")
+def vocab_size(pytestconfig):
+    return pytestconfig.getoption("vocab_size")
+
+
+@pytest.fixture(scope="session")
+def ctx_length(pytestconfig):
+    return pytestconfig.getoption("ctx_length")
+
+
+sequence_length = None
+batch_size = None
+vocab_size = None
+ctx_length = None
+
+
+@pytest.fixture(autouse=True, scope="session")
+def init(pytestconfig):
+
+    global sequence_length
+    global batch_size
+    global vocab_size
+    global ctx_length
+
+    sequence_length = pytestconfig.getoption('sequence_length')
+    batch_size = pytestconfig.getoption('batch_size')
+    vocab_size = pytestconfig.getoption('vocab_size')
+    ctx_length = pytestconfig.getoption('ctx_length')
 
 
 @pytest.fixture
