@@ -118,7 +118,7 @@ def test_cpu_vs_qaic(setup_data_min_ps):
             "logits",
         ],
         dynamo=False,
-        verbose=True,
+        verbose=False,
     )
 
     # Compile QPC file
@@ -147,7 +147,7 @@ def test_cpu_vs_qaic(setup_data_min_ps):
     subprocess.run(["rm", "-rf", f"{qpc_dir_path}"])
     print("Compile command", " ".join(compile_cmd))
     result = subprocess.run(compile_cmd, capture_output=True, text=True)    
-    print(result.stdout)
+    # print(result.stdout)
     if (result.returncode != 0):
         print(result.stderr)
 
@@ -238,7 +238,7 @@ def test_gpu_vs_qaic(setup_data_min_ps):
             "logits",
         ],
         dynamo=False,
-        verbose=True,
+        verbose=False,
     )
 
     # Compile QPC file
@@ -267,7 +267,7 @@ def test_gpu_vs_qaic(setup_data_min_ps):
     subprocess.run(["rm", "-rf", f"{qpc_dir_path}"])
     print("Compile command", " ".join(compile_cmd))
     result = subprocess.run(compile_cmd, capture_output=True, text=True)    
-    print(result.stdout)
+    # print(result.stdout)
     if (result.returncode != 0):
         print(result.stderr)
 

@@ -315,7 +315,7 @@ def test_gpu_vs_qaic(setup_data_penalties):
             "presence_penalty_retain_state_RetainedState",
         ],
         dynamo=False,
-        verbose=True,
+        verbose=False,
     )
 
     # Compile QPC file
@@ -343,7 +343,7 @@ def test_gpu_vs_qaic(setup_data_penalties):
     ]
     subprocess.run(["rm", "-rf", f"{qpc_dir_path}"])
     result = subprocess.run(compile_cmd, capture_output=True, text=True)
-    print(result.stdout)
+    # print(result.stdout)
     if (result.returncode != 0):
         print(result.stderr)
 
