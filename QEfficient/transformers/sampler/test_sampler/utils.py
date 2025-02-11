@@ -30,4 +30,14 @@ def print_difference_in_tensors(
 
         if diff <= thresholds["10-bit"]:
             print("Insignificant")
-        print("-"*20)
+        else:
+            print("Significant")
+        print("-" * 20)
+
+    max_diff = torch.max(difference)
+    print(f"\nMaximum Absolute Difference: {max_diff}")
+
+    for bit_precision, bit_threshold in thresholds.items():
+        exceeds_threshold = max_diff > bit_threshold
+        print(f"Maximum difference exceeds {bit_precision:<6} threshold of {bit_threshold:<18}: {exceeds_threshold}")
+    print("-" * 50)
