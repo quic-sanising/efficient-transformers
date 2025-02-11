@@ -116,6 +116,7 @@ def test_cpu_vs_qaic(setup_data):
     min_ps = setup_data["min_ps"]
 
     # ---Run on CPU---
+    qeff_start_time = perf_counter()
     qeff_output = sampler_forward(
         None,
         output_token_ids[:, -1:],
@@ -130,7 +131,9 @@ def test_cpu_vs_qaic(setup_data):
         top_ps,
         min_ps,
     )
+    qeff_end_time = perf_counter()
     print("\nOutput\n", qeff_output)
+    print(f"Time Taken {(qeff_end_time - qeff_start_time) * 1000: .5f} ms\n")
 
     # ---Run on QAIC---
     class Sampler(nn.Module):
@@ -226,8 +229,11 @@ def test_cpu_vs_qaic(setup_data):
         "min_ps": min_ps.detach().cpu().numpy(),
     }
     print("\nQAIC Input\n", inputs)
+    qaic_start_time = perf_counter()
     outputs = session.run(inputs)
+    qaic_end_time = perf_counter()
     print("\nQAIC Output\n", outputs)
+    print(f"Time Taken {(qaic_end_time - qaic_start_time) * 1000: .5f} ms\n")
 
     hw_output_logits = torch.from_numpy(outputs["logits"])
     hw_repetition_penalty_retain_state = torch.from_numpy(outputs["repetition_penalty_retain_state_RetainedState"])
@@ -307,6 +313,7 @@ def test_gpu_vs_qaic(setup_data):
     min_ps = setup_data["min_ps"].cuda()
 
     # ---Run on GPU---
+    qeff_start_time = perf_counter()
     qeff_output = sampler_forward(
         None,
         output_token_ids[:, -1:],
@@ -321,7 +328,9 @@ def test_gpu_vs_qaic(setup_data):
         top_ps,
         min_ps,
     )
+    qeff_end_time = perf_counter()
     print("\nOutput\n", qeff_output)
+    print(f"Time Taken {(qeff_end_time - qeff_start_time) * 1000: .5f} ms\n")
 
     # ---Run on QAIC---
     class Sampler(nn.Module):
@@ -417,8 +426,11 @@ def test_gpu_vs_qaic(setup_data):
         "min_ps": min_ps.detach().cpu().numpy(),
     }
     print("\nQAIC Input\n", inputs)
+    qaic_start_time = perf_counter()
     outputs = session.run(inputs)
+    qaic_end_time = perf_counter()
     print("\nQAIC Output\n", outputs)
+    print(f"Time Taken {(qaic_end_time - qaic_start_time) * 1000: .5f} ms\n")
 
     hw_output_logits = torch.from_numpy(outputs["logits"])
     hw_repetition_penalty_retain_state = torch.from_numpy(outputs["repetition_penalty_retain_state_RetainedState"])

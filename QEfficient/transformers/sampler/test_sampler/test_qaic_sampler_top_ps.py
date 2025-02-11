@@ -72,13 +72,16 @@ def test_cpu_vs_qaic(setup_data_top_ps):
     qaic_top_ps = deepcopy(setup_data_top_ps["top_ps"])
 
     # ---Run on CPU---
+    qeff_start_time = perf_counter()
     qeff_output = sampler_forward(
         None,
         logits.to(torch.float16),
         top_ks,
         top_ps,
     )
+    qeff_end_time = perf_counter()
     print("\nOutput\n", qeff_output)
+    print(f"Time Taken {(qeff_end_time - qeff_start_time) * 1000: .5f} ms\n")
     
     # ---Run on QAIC---
     class Sampler(nn.Module):
@@ -150,8 +153,11 @@ def test_cpu_vs_qaic(setup_data_top_ps):
         "top_ps": qaic_top_ps.detach().cpu().numpy(),
     }
     print("\nQAIC Input\n", inputs)
+    qaic_start_time = perf_counter()
     outputs = session.run(inputs)
+    qaic_end_time = perf_counter()
     print("\nQAIC Output\n", outputs)
+    print(f"Time Taken {(qaic_end_time - qaic_start_time) * 1000: .5f} ms\n")
 
     hw_output_logits = torch.from_numpy(outputs["logits"])
 
@@ -185,13 +191,16 @@ def test_gpu_vs_qaic(setup_data_top_ps):
     qaic_top_ps = deepcopy(setup_data_top_ps["top_ps"])
 
     # ---Run on CPU---
+    qeff_start_time = perf_counter()
     qeff_output = sampler_forward(
         None,
         logits.to(torch.float16),
         top_ks,
         top_ps,
     )
+    qeff_end_time = perf_counter()
     print("\nOutput\n", qeff_output)
+    print(f"Time Taken {(qeff_end_time - qeff_start_time) * 1000: .5f} ms\n")
     
     # ---Run on QAIC---
     class Sampler(nn.Module):
@@ -263,8 +272,11 @@ def test_gpu_vs_qaic(setup_data_top_ps):
         "top_ps": qaic_top_ps.detach().cpu().numpy(),
     }
     print("\nQAIC Input\n", inputs)
+    qaic_start_time = perf_counter()
     outputs = session.run(inputs)
+    qaic_end_time = perf_counter()
     print("\nQAIC Output\n", outputs)
+    print(f"Time Taken {(qaic_end_time - qaic_start_time) * 1000: .5f} ms\n")
     
     hw_output_logits = torch.from_numpy(outputs["logits"])
 
