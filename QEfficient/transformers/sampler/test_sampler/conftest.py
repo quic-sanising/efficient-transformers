@@ -58,6 +58,8 @@ def init(pytestconfig):
     batch_size = pytestconfig.getoption('batch_size')
     vocab_size = pytestconfig.getoption('vocab_size')
     ctx_length = pytestconfig.getoption('ctx_length')
+    
+    torch.set_printoptions(threshold=torch.inf)
 
 
 @pytest.fixture
