@@ -129,9 +129,10 @@ def setup_data_top_ps(batch_size, vocab_size):
     torch.manual_seed(seed)
 
     logits = torch.randn(batch_size, 1, vocab_size)
-    top_ks = torch.randint(1, vocab_size, (batch_size,))  # Between 1 and vocab_size
+    top_ks = torch.ones(batch_size, dtype=torch.int64) * vocab_size  # Disable top k    
     top_ps = torch.randint(50, 100, (batch_size,)) / 100.0  # Between 0.50 and 0.99
 
+    print("top_ks", top_ks)
     print("top_ps", top_ps)
 
     return {
@@ -152,10 +153,12 @@ def setup_data_min_ps(batch_size, vocab_size):
     torch.manual_seed(seed)
 
     logits = torch.randn(batch_size, 1, vocab_size)
-    top_ks = torch.randint(1, vocab_size, (batch_size,))  # Between 1 and vocab_size
-    top_ps = torch.randint(50, 100, (batch_size,)) / 100.0  # Between 0.50 and 0.99
+    top_ks = torch.ones(batch_size, dtype=torch.int64) * vocab_size  # Disable top k    
+    top_ps = torch.ones(batch_size, )  # Disable top p
     min_ps = torch.randint(50, 100, (batch_size,)) / 100.0  # Between 0.50 and 0.99
 
+    print("top_ks", top_ks)
+    print("top_ps", top_ps)
     print("min_ps", min_ps)
 
     return {
