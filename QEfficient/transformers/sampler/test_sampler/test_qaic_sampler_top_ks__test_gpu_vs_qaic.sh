@@ -2,10 +2,7 @@
 
 # Define the configurations
 batch_sizes=(1 4 8 16 32)
-# vocab_sizes=(10 100 1024 2048 4096)
-# batch_sizes=(1)
-# vocab_sizes=(2048)
-vocab_sizes=(2048 4096)
+vocab_sizes=(10 100 1024 2048 4096)
 
 # Ensure the output directory exists
 output_dir="./pytest_outputs"
@@ -24,7 +21,7 @@ for batch_size in "${batch_sizes[@]}"; do
         pytest_output=$(pytest --disable-warnings -s -v test_qaic_sampler_top_ks.py::test_gpu_vs_qaic \
             --batch-size=$batch_size \
             --vocab-size=$vocab_size 2>&1 | tee -a $output_file)
-        
+
         success_count=$((success_count + $(echo "$pytest_output" | grep -c "PASSED")))
         total_count=$((total_count + 1))
     done

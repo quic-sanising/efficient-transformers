@@ -23,13 +23,13 @@ for sequence_length in "${sequence_lengths[@]}"; do
         for vocab_size in "${vocab_sizes[@]}"; do
             for ctx_length in "${ctx_lengths[@]}"; do
                 pytest_output=$(pytest --disable-warnings -s -v test_qaic_sampler.py::test_cpu_vs_vllm_cpu \
-                --sequence-length=$sequence_length \
-                --batch-size=$batch_size \
-                --vocab-size=$vocab_size \
-                --ctx-length=$ctx_length 2>&1 | tee -a $output_file)
+                    --sequence-length=$sequence_length \
+                    --batch-size=$batch_size \
+                    --vocab-size=$vocab_size \
+                    --ctx-length=$ctx_length 2>&1 | tee -a $output_file)
 
-				success_count=$((success_count + $(echo "$pytest_output" | grep -c "PASSED")))
-		        total_count=$((total_count + 1))
+                success_count=$((success_count + $(echo "$pytest_output" | grep -c "PASSED")))
+                total_count=$((total_count + 1))
             done
         done
     done
