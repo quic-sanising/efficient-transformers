@@ -215,7 +215,7 @@ def sampler_forward(
     top_probs = torch.softmax(topk_values_asc, dim=1)  # (batch_size * spec_length, vocab_size)
     topk_probs_sum = torch.cumsum(top_probs, dim=1)
     top_p_mask = topk_probs_sum <= 1 - top_ps.unsqueeze(1).repeat(spec_length, 1) 
-    top_p_mask[:, -1] = False
+    top_p_mask[:, vocab_size - 1] = False
     topk_values_asc[top_p_mask] = torch.finfo(torch.float16).min
 
     # Min P
