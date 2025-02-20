@@ -1,3 +1,4 @@
+import numpy as np
 import torch
 
 
@@ -41,3 +42,7 @@ def print_difference_in_tensors(
         exceeds_threshold = max_diff > bit_threshold
         print(f"Maximum difference exceeds {bit_precision:<6} threshold of {bit_threshold:<18}: {exceeds_threshold}")
     print("-" * 50)
+
+
+def get_float16_binary_repr(number):
+    return np.binary_repr(np.float16(number).view(np.int16), width=16)
