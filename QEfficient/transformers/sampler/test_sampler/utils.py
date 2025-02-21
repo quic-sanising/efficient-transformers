@@ -2,11 +2,9 @@ import numpy as np
 import torch
 
 
-def print_difference_in_tensors(
-    tensor_1, tensor_1_name, tensor_2, tensor_2_name, threshold=1e-5
-):
+def print_difference_in_tensors(tensor_1, tensor_1_name, tensor_2, tensor_2_name, threshold=1e-5):
     difference = torch.abs(tensor_1 - tensor_2)
-    
+
     # Handle the case when both tensors are scalars
     if tensor_1.numel() == 1 and tensor_2.numel() == 1:
         indices = (torch.tensor([0]),)
@@ -54,13 +52,13 @@ def get_float16_binary_repr(number):
 
 
 def get_summary_statistics(samples: torch.Tensor):
-    mean = torch.mean(samples * 1.)
+    mean = torch.mean(samples * 1.0)
     # std = torch.std(samples * 1.)
     # min_val = torch.min(samples)
     # max_val = torch.max(samples)
     # median = torch.median(samples)
     # mode = torch.mode(samples)[0]
-    variance = torch.var(samples * 1.)
+    variance = torch.var(samples * 1.0)
     # skewness = torch.mean((samples * 1. - mean) ** 3) / (std ** 3)
     # kurtosis = torch.mean((samples * 1. - mean) ** 4) / (std ** 4) - 3
     return {
@@ -76,23 +74,23 @@ def get_summary_statistics(samples: torch.Tensor):
     }
 
 
-def get_kl_divergence(p: torch.Tensor, q: torch.Tensor, num_categories: int):
+def get_kl_divergence(p: torch.Tensor, q: torch.Tensor, num_categoriesries: int):
     from scipy.special import kl_div
-    
+
     p = p.numpy()
     q = q.numpy()
-    
+
     # Estimate probability distributions
-    p_counts = np.bincount(p, minlength=num_categories)
-    q_counts = np.bincount(q, minlength=num_categories)
-    
+    p_counts = np.bincount(p, minlength=num_categoriesries)
+    q_counts = np.bincount(q, minlength=num_categoriesries)
+
     p_probs = p_counts / np.sum(p_counts)
     q_probs = q_counts / np.sum(q_counts)
-    
+
     # Avoid division by zero and log of zero
     p_probs = np.clip(p_probs, 1e-10, 1)
     q_probs = np.clip(q_probs, 1e-10, 1)
-    
+
     # print(p_probs, q_probs)
     # print("-"*10)
 
@@ -106,15 +104,13 @@ def get_z_score(x: torch.Tensor, y: torch.Tensor, n_x: int, n_y: int):
 
     x = x.numpy()
     y = y.numpy()
-    
+
     x_mean = np.mean(x)
     y_mean = np.mean(y)
-    
+
     x_std = np.std(x)
     y_std = np.std(y)
-    
-    z_score = (x_mean - y_mean) / np.sqrt((x_std ** 2 / n_x) + (y_std ** 2 / n_y))
-    
+
+    z_score = (x_mean - y_mean) / np.sqrt((x_std**2 / n_x) + (y_std**2 / n_y))
     p_value = 2 * (1 - norm.cdf(abs(z_score)))
-    
     return z_score, p_value
