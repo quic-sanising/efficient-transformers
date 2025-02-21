@@ -170,6 +170,31 @@ def setup_data_min_ps(batch_size, vocab_size):
         "top_ps": top_ps,
         "min_ps": min_ps,
     }
+    
+    
+@pytest.fixture
+def setup_data_random_sampling(batch_size, vocab_size):
+    import numpy as np
+
+    seed = np.random.randint(1, 101)
+    # seed = 67
+    torch.manual_seed(seed)
+    
+    logits = torch.randn(batch_size, 1, vocab_size)
+    # temperatures = torch.randint(1, 11, (batch_size,)) / 10.0
+    pseudo_random_generator = torch.Generator()
+    random_numbers = torch.rand(batch_size, generator=pseudo_random_generator)
+    generators = {
+        i: pseudo_random_generator for i in range(batch_size)
+    }
+    
+    return {
+        "seed": seed,
+        "logits": logits,
+        # "temperatures": temperatures,
+        "random_numbers": random_numbers,
+        "generators": generators,
+    }
 
 
 @pytest.fixture
