@@ -74,4 +74,47 @@ def get_summary_statistics(samples: torch.Tensor):
         # "skewness": skewness.reshape((1,)),
         # "kurtosis": kurtosis.reshape((1,)),
     }
+
+
+def get_kl_divergence(p: torch.Tensor, q: torch.Tensor, num_categories: int):
+    from scipy.special import kl_div
     
+    p = p.numpy()
+    q = q.numpy()
+    
+    # Estimate probability distributions
+    p_counts = np.bincount(p, minlength=num_categories)
+    q_counts = np.bincount(q, minlength=num_categories)
+    
+    p_probs = p_counts / np.sum(p_counts)
+    q_probs = q_counts / np.sum(q_counts)
+    
+    # Avoid division by zero and log of zero
+    p_probs = np.clip(p_probs, 1e-10, 1)
+    q_probs = np.clip(q_probs, 1e-10, 1)
+    
+    # print(p_probs, q_probs)
+    # print("-"*10)
+
+    # Calculate KL divergence
+    kl_divergence = kl_div(p_probs, q_probs).sum()
+    return kl_divergence
+
+
+def get_z_score(x: torch.Tensor, y: torch.Tensor, n_x: int, n_y: int):
+    from scipy.stats import norm
+
+    x = x.numpy()
+    y = y.numpy()
+    
+    x_mean = np.mean(x)
+    y_mean = np.mean(y)
+    
+    x_std = np.std(x)
+    y_std = np.std(y)
+    
+    z_score = (x_mean - y_mean) / np.sqrt((x_std ** 2 / n_x) + (y_std ** 2 / n_y))
+    
+    p_value = 2 * (1 - norm.cdf(abs(z_score)))
+    
+    return z_score, p_value
