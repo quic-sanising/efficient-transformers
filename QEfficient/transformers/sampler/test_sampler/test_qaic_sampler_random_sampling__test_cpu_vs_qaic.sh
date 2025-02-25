@@ -1,6 +1,6 @@
 #!/bin/bash
-# source ~/.bashrc 
-# conda activate vllm
+source ~/.bashrc 
+conda activate vllm
 
 # Define the configurations
 batch_sizes=(8000 16000 32000)
@@ -17,14 +17,14 @@ success_count=0
 total_count=0
 
 # CPU vs vLLM CPU
-output_file="$output_dir/test_qaic_sampler_random_sampling__test_cpu_vs_vllm_cpu.txt"
+output_file="$output_dir/test_qaic_sampler_random_sampling__test_cpu_vs_qaic.txt"
 rm $output_file
 
-# echo $(date '+%y%m%d_%H%M%S') 2>&1 | tee -a $output_file
+echo $(date '+%y%m%d_%H%M%S') 2>&1 | tee -a $output_file
 
 for batch_size in "${batch_sizes[@]}"; do
     for vocab_size in "${vocab_sizes[@]}"; do
-        pytest_output=$(pytest --disable-warnings -s -v test_qaic_sampler_random_sampling.py::test_cpu_vs_vllm_cpu \
+        pytest_output=$(pytest --disable-warnings -s -v test_qaic_sampler_random_sampling.py::test_cpu_vs_qaic \
             --batch-size=$batch_size \
             --vocab-size=$vocab_size 2>&1 | tee -a $output_file)
 

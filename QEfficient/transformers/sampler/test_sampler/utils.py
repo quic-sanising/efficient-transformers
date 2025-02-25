@@ -74,15 +74,15 @@ def get_summary_statistics(samples: torch.Tensor):
     }
 
 
-def get_kl_divergence(p: torch.Tensor, q: torch.Tensor, num_categoriesries: int):
+def get_kl_divergence(p: torch.Tensor, q: torch.Tensor, num_categories: int):
     from scipy.special import kl_div
 
     p = p.numpy()
     q = q.numpy()
 
     # Estimate probability distributions
-    p_counts = np.bincount(p, minlength=num_categoriesries)
-    q_counts = np.bincount(q, minlength=num_categoriesries)
+    p_counts = np.bincount(p, minlength=num_categories)
+    q_counts = np.bincount(q, minlength=num_categories)
 
     p_probs = p_counts / np.sum(p_counts)
     q_probs = q_counts / np.sum(q_counts)
