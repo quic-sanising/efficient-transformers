@@ -3,6 +3,7 @@ import torch
 import torch.nn.functional as F
 
 # from QEfficient.customop import CtxScatterFunc
+from QEfficient.utils.constants import Constants
 from transformers.cache_utils import Cache
 from transformers.modeling_outputs import ModelOutput, CausalLMOutputWithPast
 from typing import List, Optional, Tuple, Union
@@ -10,7 +11,7 @@ from typing import List, Optional, Tuple, Union
 @dataclass
 class QEffCausalLMOutputWithPast(ModelOutput):
     loss: Optional[torch.FloatTensor] = None
-    logits: torch.FloatTensor = None
+    logits: torch.Tensor = None
     past_key_values: Optional[Tuple[Tuple[torch.FloatTensor]]] = None
     hidden_states: Optional[Tuple[torch.FloatTensor, ...]] = None
     attentions: Optional[Tuple[torch.FloatTensor, ...]] = None
@@ -205,7 +206,7 @@ def sampler_forward(
         logits = torch.where(temperatures != 0, logits / temperatures, logits)
 
     # Top K
-    topk_values_asc, topk_indices_asc = torch.topk(logits, k=vocab_size, dim=1, largest=False)  # (batch_size * spec_length, vocab_size)
+    topk_values_asc, topk_indices_asc = torch.topk(logits, k=Constants.MAX_TOP_K_IDS, dim=1, largest=False)  # (batch_size * spec_length, vocab_size)
 
     # True values in this mask indicate the positions of the non-top K values
     topk_mask = torch.arange(topk_values_asc.shape[1], device=device).unsqueeze(0) < (topk_values_asc.size(1) - top_ks.to(torch.long)).unsqueeze(1).repeat(spec_length, 1)
@@ -215,7 +216,7 @@ def sampler_forward(
     top_probs = torch.softmax(topk_values_asc, dim=1)  # (batch_size * spec_length, vocab_size)
     topk_probs_sum = torch.cumsum(top_probs, dim=1)
     top_p_mask = topk_probs_sum <= 1 - top_ps.unsqueeze(1).repeat(spec_length, 1) 
-    top_p_mask[:, vocab_size - 1] = False
+    top_p_mask[:, Constants.MAX_TOP_K_IDS - 1] = False
     topk_values_asc[top_p_mask] = torch.finfo(torch.float16).min
 
     # Min P
