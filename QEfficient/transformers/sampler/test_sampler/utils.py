@@ -100,6 +100,15 @@ def get_kl_divergence(p: torch.Tensor, q: torch.Tensor, num_categories: int):
 
 
 def get_z_score(x: torch.Tensor, y: torch.Tensor, n_x: int, n_y: int):
+    """
+    Null Hypothesis: There is NO significant difference between the two distributions.
+    Alternative Hypothesis: There is a significant difference between the two distributions.
+    
+    Assume significance level of 5% or 0.05.
+    
+    If p-value < 0.05, we reject the null hypothesis and conclude that there is a significant difference between the two distributions.
+    If p-value >= 0.05, we fail to reject the null hypothesis and conclude that there is no significant difference between the two distributions.
+    """
     from scipy.stats import norm
 
     x = x.numpy()
