@@ -24,6 +24,18 @@ bash test_qaic_sampler_min_ps__test_cpu_vs_qaic.sh
 bash test_qaic_sampler_min_ps__test_gpu_vs_qaic.sh 
 bash test_qaic_sampler_min_ps__test_gpu_vs_vllm_gpu.sh
 
+# Test random sampling
+bash test_qaic_sampler_random_sampling__test_cpu_vs_vllm_cpu.sh
+bash test_qaic_sampler_random_sampling__test_cpu_vs_qaic.sh 
+bash test_qaic_sampler_random_sampling__test_gpu_vs_qaic.sh 
+bash test_qaic_sampler_random_sampling__test_gpu_vs_vllm_gpu.sh
+
+# Test random sampling (gumbel max)
+bash test_qaic_sampler_random_sampling_gumbel__test_cpu_vs_vllm_cpu.sh
+bash test_qaic_sampler_random_sampling_gumbel__test_cpu_vs_qaic.sh 
+bash test_qaic_sampler_random_sampling_gumbel__test_gpu_vs_qaic.sh 
+bash test_qaic_sampler_random_sampling_gumbel__test_gpu_vs_vllm_gpu.sh
+
 # Test end to end
 bash test_qaic_sampler__test_cpu_vs_vllm_cpu.sh
 bash test_qaic_sampler__test_cpu_vs_qaic.sh 
