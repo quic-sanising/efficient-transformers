@@ -206,6 +206,7 @@ def sampler_forward(
         logits = torch.where(temperatures != 0, logits / temperatures, logits)
 
     # Top K
+    # TODO (Optimization): if (top_ks != -1 or top_ks != Constants.MAX_TOP_K_IDS).any(): skip
     topk_values_asc, topk_indices_asc = torch.topk(logits, k=Constants.MAX_TOP_K_IDS, dim=1, largest=False)  # (batch_size * spec_length, vocab_size)
     top_ks[top_ks > Constants.MAX_TOP_K_IDS] = Constants.MAX_TOP_K_IDS  # Clip k to max value
     # True values in this mask indicate the positions of the non-top K values
@@ -213,6 +214,7 @@ def sampler_forward(
     topk_values_asc[topk_mask] = torch.finfo(torch.float16).min
 
     # Top P
+    # TODO (Optimization): if (top_ps != 1.).any(): skip but will need top_probs for Min P
     top_probs = torch.softmax(topk_values_asc, dim=1)  # (batch_size * spec_length, vocab_size)
     topk_probs_sum = torch.cumsum(top_probs, dim=1)
     top_p_mask = topk_probs_sum <= 1 - top_ps.unsqueeze(1).repeat(spec_length, 1) 
@@ -220,6 +222,7 @@ def sampler_forward(
     topk_values_asc[top_p_mask] = torch.finfo(torch.float16).min
 
     # Min P
+    # TODO (Optimization): if (min_ps != 0.).any(): skip
     scaled_min_p = torch.mul(min_ps.repeat(spec_length), top_probs[:, -1])  # (batch_size * spec_length,)
     min_p_mask = top_probs < scaled_min_p.unsqueeze(1)
     topk_values_asc[min_p_mask] = torch.finfo(torch.float16).min
@@ -227,9 +230,11 @@ def sampler_forward(
     logits = logits.scatter(1, topk_indices_asc, topk_values_asc)
 
     # Softmax
+    # TODO (Optimization): if (temperatures == 0).all(): skip and perform only greedy sampling
     probs = torch.softmax(logits, dim=1)  # (batch_size * spec_length, vocab_size)
 
     # Sample the next tokens
+    # TODO (Optimization): if self.return_pds: skip 
     greedy_samples = torch.argmax(probs, dim=-1, keepdim=True)  # Greedy Sampling
     probs_sum = torch.cumsum(probs, dim=1)
     random_samples = (probs_sum >= random_numbers.unsqueeze(1).repeat(spec_length, 1)).float().argmax(-1, keepdim=True)  # Random Sampling
