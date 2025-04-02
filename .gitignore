@@ -96,3 +96,11 @@ QEfficient/transformers/sampler/test_sampler/outputs_from_qpcs
 QEfficient/transformers/sampler/test_sampler/pytest_outputs
 QEfficient/transformers/sampler/test_sampler/*.bin
 QEfficient/transformers/sampler/test_sampler/dump_ir_graphs
+*.log
+*.txt
+LlamaForCausalLM*
+TinyLlama*
+Llama*
+*.onnx
+*.bin
+*.sum
