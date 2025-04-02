@@ -211,7 +211,6 @@ def sampler_forward(
     logits = logits.float()  # (batch_size, num_logits_to_keep aka spec_length, vocab_size)
 
     # Perform Sampling
-    device = logits.device
     batch_size, spec_length, vocab_size = logits.shape
 
     # Select relevant rows

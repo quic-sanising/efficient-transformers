@@ -28,7 +28,7 @@ from QEfficient.utils._utils import load_json
 from QEfficient.utils.cache import QEFF_HOME, to_hashable
 
 logger = logging.getLogger(__name__)
-
+logger.setLevel(logging.INFO)
 
 class QEFFBaseModel(ABC):
     """
@@ -164,6 +164,7 @@ class QEFFBaseModel(ABC):
                 output_names=output_names,
                 dynamic_axes=dynamic_axes,
                 opset_version=constants.ONNX_EXPORT_OPSET,
+                verbose=True,
                 **export_kwargs,
             )
             logger.info("Pytorch export successful")
