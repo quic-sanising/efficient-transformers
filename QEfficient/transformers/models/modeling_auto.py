@@ -251,33 +251,39 @@ class QEFFAutoModelForCausalLM(QEFFTransformersBase):
             example_inputs["last_accepted_output_tokens"] = torch.randint(low=0, high=self.model.config.vocab_size, size=(bs, nlk))
             dynamic_axes["last_accepted_output_tokens"] = {0: "batch_size", 1: "num_logits_to_keep"}
 
-            example_inputs["repetition_penalty_retain_state"] = torch.zeros(bs, self.model.config.vocab_size, dtype=torch.int32)
-            dynamic_axes["repetition_penalty_retain_state"] = {0: "batch_size", 1: "vocab_size"}
+            example_inputs["repetition_penalty_retain_state"] = torch.zeros(
+                fbs if self.continuous_batching else bs, self.model.config.vocab_size, dtype=torch.int32)
+            dynamic_axes["repetition_penalty_retain_state"] = {
+                0: "full_batch_size" if self.continuous_batching else "batch_size",
+            }
             output_names.append("repetition_penalty_retain_state_RetainedState")
 
-            example_inputs["repetition_penalties"] = torch.ones(bs, dtype=torch.float) * 0.5
+            example_inputs["repetition_penalties"] = torch.ones((bs, 1), dtype=torch.float) * 0.5
             dynamic_axes["repetition_penalties"] = {0: "batch_size"}
 
-            example_inputs["presence_penalty_retain_state"] = torch.zeros(bs, self.model.config.vocab_size, dtype=torch.int32)
-            dynamic_axes["presence_penalty_retain_state"] = {0: "batch_size", 1: "vocab_size"}
+            example_inputs["presence_penalty_retain_state"] = torch.zeros(
+                fbs if self.continuous_batching else bs, self.model.config.vocab_size, dtype=torch.int32)
+            dynamic_axes["presence_penalty_retain_state"] = {
+                0: "full_batch_size" if self.continuous_batching else "batch_size",
+            }
             output_names.append("presence_penalty_retain_state_RetainedState")
 
-            example_inputs["presence_penalties"] = torch.zeros(bs, dtype=torch.float) + 0.5
+            example_inputs["presence_penalties"] = torch.zeros((bs, 1), dtype=torch.float) + 0.5
             dynamic_axes["presence_penalties"] = {0: "batch_size"}
 
-            example_inputs["temperatures"] = torch.ones(bs, dtype=torch.float)
+            example_inputs["temperatures"] = torch.ones((bs, 1), dtype=torch.float)
             dynamic_axes["temperatures"] = {0: "batch_size"}
 
-            example_inputs["top_ks"] = torch.randint(1, max_top_k_ids, size=(bs,)).to(torch.int32)
+            example_inputs["top_ks"] = torch.randint(1, max_top_k_ids, size=(bs, 1)).to(torch.int32)
             dynamic_axes["top_ks"] = {0: "batch_size"}
 
-            example_inputs["top_ps"] = torch.ones(bs, dtype=torch.float) * 0.80
+            example_inputs["top_ps"] = torch.ones((bs, 1), dtype=torch.float) * 0.80
             dynamic_axes["top_ps"] = {0: "batch_size"}
 
-            example_inputs["min_ps"] = torch.ones(bs, dtype=torch.float) * 0.99
+            example_inputs["min_ps"] = torch.ones((bs, 1), dtype=torch.float) * 0.99
             dynamic_axes["min_ps"] = {0: "batch_size"}
 
-            example_inputs["random_numbers"] = torch.rand(bs, dtype=torch.float)
+            example_inputs["random_numbers"] = torch.rand((bs, 1), dtype=torch.float)
             dynamic_axes["random_numbers"] = {0: "batch_size"}
 
         return self._export(
@@ -366,7 +372,6 @@ class QEFFAutoModelForCausalLM(QEFFTransformersBase):
         }
         if self.include_sampler:
              prefill_specialization.update({
-                 "vocab_size": self.model.config.vocab_size,
                  "max_top_k_ids": constants.Constants.MAX_TOP_K_IDS,
              })
         prefill_specialization.update({"num_logits_to_keep": 1})
@@ -388,7 +393,6 @@ class QEFFAutoModelForCausalLM(QEFFTransformersBase):
             }
             if self.include_sampler:
                 decode_specialization.update({
-                    "vocab_size": self.model.config.vocab_size,
                     "max_top_k_ids": constants.Constants.MAX_TOP_K_IDS,
                 })
             if self.continuous_batching:
