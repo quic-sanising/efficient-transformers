@@ -218,9 +218,10 @@ def sampler_forward(
     repetition_penalty_retain_state_selected = torch.index_select(repetition_penalty_retain_state, 0, batch_index_reshaped)
     presence_penalty_retain_state_selected = torch.index_select(presence_penalty_retain_state, 0, batch_index_reshaped)
 
-    logits = logits.reshape(-1, vocab_size)  # Reshape tensor to 2D
+    logits = logits.reshape(-1, vocab_size)  # Reshape tensor to 2D, i.e., (batch_size * spec_length, vocab_size)
 
     if input_ids.shape[1] > spec_length:  # Prefill phase, initialize retained states
+        # TODO: Initialize retain states based on position_ids for chunked inputs
         repetition_penalty_retain_state_selected = torch.mul(repetition_penalty_retain_state_selected, 0)
         presence_penalty_retain_state_selected = torch.mul(presence_penalty_retain_state_selected, 0)
         # TODO: Replace scatter_ with CtxScatterFunc; Replace -1 with int_max while exporting on onnx
@@ -234,6 +235,19 @@ def sampler_forward(
     # Update relevant rows in original tensors
     repetition_penalty_retain_state[batch_index_reshaped] = repetition_penalty_retain_state_selected
     presence_penalty_retain_state[batch_index_reshaped] = presence_penalty_retain_state_selected
+
+    # Greedy Sampling
+    greedy_samples = torch.argmax(logits, dim=1, keepdim=True)  # (batch_size * spec_length, 1)
+    if (temperatures == 0).all() and self.return_pdfs == False:
+        return QEffCausalLMOutputWithPast(
+            loss=None,
+            logits=greedy_samples.reshape(-1, spec_length, 1),  # Return sampled next tokens instead of logits
+            past_key_values=outputs.past_key_values,
+            hidden_states=outputs.hidden_states,
+            attentions=outputs.attentions,
+            repetition_penalty_retain_state=repetition_penalty_retain_state,
+            presence_penalty_retain_state=presence_penalty_retain_state,
+        )
 
     # Repetition Penalty
     if (repetition_penalties != 1.).any():
@@ -251,12 +265,11 @@ def sampler_forward(
     # TODO: Frequency Penalty
 
     # Temperature Scaling
-    if (temperatures != 0).any():
-        temperatures = temperatures.repeat(spec_length, 1)  # (batch_size, 1) -> (batch_size * spec_length, 1)
-        logits = torch.where(temperatures != 0, logits / temperatures, logits)
+    temperatures = temperatures.repeat(spec_length, 1)  # (batch_size, 1) -> (batch_size * spec_length, 1)
+    logits = torch.where(temperatures != 0, logits / temperatures, logits)
 
     # Top K
-    # TODO (Optimization): if (top_ks != -1 or top_ks != Constants.MAX_TOP_K_IDS).any(): skip
+    # TODO (Optimization): if (top_ks != -1 or top_ks != Constants.MAX_TOP_K_IDS).any() is False: skip
     topk_values_asc, topk_indices_asc = torch.topk(logits, k=Constants.MAX_TOP_K_IDS, dim=1, largest=False)  # (batch_size * spec_length, Constants.MAX_TOP_K_IDS)
     top_ks[top_ks > Constants.MAX_TOP_K_IDS] = Constants.MAX_TOP_K_IDS  # Clip k to max value
     # True values in this mask indicate the positions of the non-top K values
@@ -264,7 +277,7 @@ def sampler_forward(
     topk_values_asc[topk_mask] = torch.finfo(torch.float16).min
 
     # Top P
-    # TODO (Optimization): if (top_ps != 1.).any(): skip but will need top_probs for Min P
+    # TODO (Optimization): if (top_ps != 1.).any() is False: skip but will need top_probs for Min P
     top_probs = torch.softmax(topk_values_asc, dim=1)  # (batch_size * spec_length, Constants.MAX_TOP_K_IDS)
     topk_probs_sum = torch.cumsum(top_probs, dim=1)
     top_p_mask = topk_probs_sum <= 1 - top_ps.repeat(spec_length, 1)  # (batch_size * spec_length, Constants.MAX_TOP_K_IDS)
@@ -272,32 +285,35 @@ def sampler_forward(
     topk_values_asc[top_p_mask] = torch.finfo(torch.float16).min
 
     # Min P
-    # TODO (Optimization): if (min_ps != 0.).any(): skip
-    scaled_min_p = torch.mul(min_ps.repeat(spec_length, 1), top_probs[:, -1:])  # (batch_size * spec_length, 1)
-    min_p_mask = top_probs < scaled_min_p  # (batch_size * spec_length, Constants.MAX_TOP_K_IDS)
-    topk_values_asc[min_p_mask] = torch.finfo(torch.float16).min
+    if (min_ps != 0.).any():
+        scaled_min_p = torch.mul(min_ps.repeat(spec_length, 1), top_probs[:, Constants.MAX_TOP_K_IDS - 1:])  # (batch_size * spec_length, 1)
+        min_p_mask = top_probs < scaled_min_p  # (batch_size * spec_length, Constants.MAX_TOP_K_IDS)
+        topk_values_asc[min_p_mask] = torch.finfo(torch.float16).min
 
+    # Update the logits
     logits = logits.scatter(1, topk_indices_asc, topk_values_asc)  # (batch_size * spec_length, vocab_size)
 
     # Softmax
-    # TODO (Optimization): if (temperatures == 0).all(): skip and perform only greedy sampling
     probs = torch.softmax(logits, dim=1)  # (batch_size * spec_length, vocab_size)
+    if self.return_pds:
+        return QEffCausalLMOutputWithPast(
+        loss=None,
+        logits=probs.reshape(-1, spec_length, vocab_size),  # Return probabilities instead of logits
+        past_key_values=outputs.past_key_values,
+        hidden_states=outputs.hidden_states,
+        attentions=outputs.attentions,
+        repetition_penalty_retain_state=repetition_penalty_retain_state,
+        presence_penalty_retain_state=presence_penalty_retain_state,
+    )
 
     # Sample the next tokens
-    # TODO (Optimization): if self.return_pds: skip
-    greedy_samples = torch.argmax(probs, dim=-1, keepdim=True)  # Greedy Sampling
     gumbel_noise = -torch.log(-torch.log(random_numbers.repeat(spec_length, 1)))  # Gumbel-Max Trick
     y = probs + gumbel_noise
-    random_samples = torch.argmax(y, dim=-1, keepdim=True)  # Random Sampling
-    next_tokens = torch.where(temperatures == 0, greedy_samples, random_samples)  # (batch_size * spec_length, 1)
-
-    # Reshape tensor back to 3D
-    probs = probs.reshape(-1, spec_length, vocab_size)
-    next_tokens = next_tokens.reshape(-1, spec_length, 1)
-
+    random_samples = torch.argmax(y, dim=1, keepdim=True)  # Random Sampling
+    next_tokens = torch.where(temperatures == 0, greedy_samples, random_samples).reshape(-1, spec_length, 1)  # (batch_size, spec_length, 1)
     return QEffCausalLMOutputWithPast(
         loss=None,
-        logits=probs if self.return_pdfs else next_tokens,  # Return probabilities or sampled next tokens instead of logits
+        logits=next_tokens,  # Return sampled next tokens instead of logits
         past_key_values=outputs.past_key_values,
         hidden_states=outputs.hidden_states,
         attentions=outputs.attentions,
