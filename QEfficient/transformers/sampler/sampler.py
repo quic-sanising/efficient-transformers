@@ -270,7 +270,9 @@ def sampler_forward(
 
     # Top K
     # TODO (Optimization): if (top_ks != -1 or top_ks != Constants.MAX_TOP_K_IDS).any() is False: skip but will need topk_values_asc and topk_indices_asc
-    topk_values_asc, topk_indices_asc = torch.topk(logits, k=Constants.MAX_TOP_K_IDS, dim=1, largest=False)  # (batch_size * spec_length, Constants.MAX_TOP_K_IDS)
+    topk_values, topk_indices = torch.topk(logits, k=Constants.MAX_TOP_K_IDS, dim=1)  # (batch_size * spec_length, vocab_size)
+    topk_values_asc = topk_values.flip(dims=[1])
+    topk_indices_asc = topk_indices.flip(dims=[1])
     top_ks[top_ks > Constants.MAX_TOP_K_IDS] = Constants.MAX_TOP_K_IDS  # Clip k to max value
     # True values in this mask indicate the positions of the non-top K values
     topk_mask = torch.arange(topk_values_asc.shape[1]).unsqueeze(0) < (topk_values_asc.size(1) - top_ks.to(torch.long)).repeat(spec_length, 1)  # (batch_size * spec_length, Constants.MAX_TOP_K_IDS)
@@ -292,6 +294,7 @@ def sampler_forward(
 
     # Update the logits
     # TODO (Optimization): Only need logits for probs when self.return_pdfs is True
+    logits.fill_(torch.finfo(torch.float16).min)
     logits = logits.scatter(1, topk_indices_asc, topk_values_asc)  # (batch_size * spec_length, vocab_size)
 
     # Softmax
