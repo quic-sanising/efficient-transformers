@@ -269,7 +269,7 @@ def sampler_forward(
     logits = torch.where(temperatures != 0, logits / temperatures, logits)
 
     # Top K
-    # TODO (Optimization): if (top_ks != -1 or top_ks != Constants.MAX_TOP_K_IDS).any() is False: skip
+    # TODO (Optimization): if (top_ks != -1 or top_ks != Constants.MAX_TOP_K_IDS).any() is False: skip but will need topk_values_asc and topk_indices_asc
     topk_values_asc, topk_indices_asc = torch.topk(logits, k=Constants.MAX_TOP_K_IDS, dim=1, largest=False)  # (batch_size * spec_length, Constants.MAX_TOP_K_IDS)
     top_ks[top_ks > Constants.MAX_TOP_K_IDS] = Constants.MAX_TOP_K_IDS  # Clip k to max value
     # True values in this mask indicate the positions of the non-top K values
@@ -291,6 +291,7 @@ def sampler_forward(
         topk_values_asc[min_p_mask] = torch.finfo(torch.float16).min
 
     # Update the logits
+    # TODO (Optimization): Only need logits for probs when self.return_pdfs is True
     logits = logits.scatter(1, topk_indices_asc, topk_values_asc)  # (batch_size * spec_length, vocab_size)
 
     # Softmax
@@ -307,6 +308,7 @@ def sampler_forward(
     )
 
     # Sample the next tokens
+    # TODO (Optimization): Perform random sampling only on topk_values_asc
     gumbel_noise = -torch.log(-torch.log(random_numbers.repeat(spec_length, 1)))  # Gumbel-Max Trick
     y = probs + gumbel_noise
     random_samples = torch.argmax(y, dim=1, keepdim=True)  # Random Sampling
