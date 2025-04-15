@@ -297,7 +297,7 @@ def sampler_forward(
 
     # Softmax
     probs = torch.softmax(logits, dim=1)  # (batch_size * spec_length, vocab_size)
-    if self.return_pds:
+    if self.return_pdfs:
         return QEffCausalLMOutputWithPast(
         loss=None,
         logits=probs.reshape(-1, spec_length, vocab_size),  # Return probabilities instead of logits
