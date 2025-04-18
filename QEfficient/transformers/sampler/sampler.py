@@ -251,7 +251,7 @@ def sampler_forward(
     if (repetition_penalties != 1.).any():
         repetition_penalties = repetition_penalties.repeat(spec_length, vocab_size)  # (batch_size, 1) -> (batch_size * spec_length, vocab_size)
         repetition_penalty_retain_state_selected = repetition_penalty_retain_state_selected.repeat(spec_length, 1)  # (batch_size, vocab_size) -> (batch_size * spec_length, vocab_size)
-        repetition_penalties[~repetition_penalty_retain_state_selected.bool()] = 1.0
+        repetition_penalties[repetition_penalty_retain_state_selected == 0] = 1.0
         logits = torch.where(logits > 0, logits / repetition_penalties, logits * repetition_penalties)
 
     # Presence Penalty
