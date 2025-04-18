@@ -5,7 +5,7 @@ import torch.nn.functional as F
 # from QEfficient.customop import CtxScatterFunc
 from QEfficient.utils.constants import Constants
 from transformers.cache_utils import Cache
-from transformers.modeling_outputs import ModelOutput, CausalLMOutputWithPast
+from transformers.modeling_outputs import CausalLMOutputWithPast, ModelOutput
 from typing import List, Optional, Tuple, Union
 
 
