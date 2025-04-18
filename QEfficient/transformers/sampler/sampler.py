@@ -225,8 +225,11 @@ def sampler_forward(
     if input_ids.shape[1] > spec_length:  # Prefill phase, initialize retained states
         # TODO: Replace scatter_ with CtxScatterFunc; Replace -1 with int_max while exporting on onnx
         # past_repetition_penalty_buffer_selected = CtxScatterFunc.apply(past_repetition_penalty_buffer_selected.unsqueeze(1), input_ids, 1).squeeze(1)
+        if position_ids[0, 0] == 0:
+            past_repetition_penalty_buffer_selected = torch.mul(past_repetition_penalty_buffer_selected, 0)
+            past_presence_penalty_buffer_selected = torch.mul(past_presence_penalty_buffer_selected, 0)
         past_repetition_penalty_buffer_selected.scatter_(1, input_ids, 1)
-        past_presence_penalty_buffer_selected.scatter_(1, input_ids, 0)
+
     else:  # Decode phase, update retained states
         past_repetition_penalty_buffer_selected.scatter_(1, last_accepted_output_tokens, 1)
         past_presence_penalty_buffer_selected.scatter_(1, last_accepted_output_tokens, 1)
