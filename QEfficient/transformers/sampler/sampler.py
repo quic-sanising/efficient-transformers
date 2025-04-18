@@ -294,24 +294,6 @@ def sampler_forward(
         min_p_mask = top_probs < scaled_min_p  # (batch_size * spec_length, Constants.MAX_TOP_K_IDS)
         topk_values_asc[min_p_mask] = torch.finfo(torch.float16).min
 
-    if self.return_pdfs:
-        # Update the logits
-        logits.fill_(torch.finfo(torch.float16).min)
-        logits = logits.scatter(1, topk_indices_asc, topk_values_asc)  # (batch_size * spec_length, vocab_size)
-        # Softmax
-        probs = torch.softmax(logits, dim=1)  # (batch_size * spec_length, vocab_size)
-        return QEffCausalLMOutputWithPast(
-            loss=None,
-            logits=None,
-            probs=probs.reshape(-1, spec_length, vocab_size),  # Return probabilities instead of logits
-            next_tokens=None,
-            past_key_values=outputs.past_key_values,
-            hidden_states=outputs.hidden_states,
-            attentions=outputs.attentions,
-            past_repetition_penalty_buffer=past_repetition_penalty_buffer,
-            past_presence_penalty_buffer=past_presence_penalty_buffer,
-        )
-
     # Random Sampling
     topk_probs_asc = torch.softmax(topk_values_asc, dim=1)  # (batch_size * spec_length, Constants.MAX_TOP_K_IDS)
     gumbel_noise = -torch.log(-torch.log(random_numbers.repeat(spec_length, 1)))  # Gumbel-Max Trick
@@ -321,10 +303,19 @@ def sampler_forward(
 
     # Sample the next tokens
     next_tokens = torch.where(temperatures == 0, greedy_samples, random_samples).reshape(-1, spec_length, 1)  # (batch_size, spec_length, 1)
+
+    probs = None
+    if self.return_pdfs:
+        # Update the logits
+        logits.fill_(torch.finfo(torch.float16).min)
+        logits = logits.scatter(1, topk_indices_asc, topk_values_asc)  # (batch_size * spec_length, vocab_size)
+        # Softmax
+        probs = torch.softmax(logits, dim=1)  # (batch_size * spec_length, vocab_size)
+
     return QEffCausalLMOutputWithPast(
         loss=None,
         logits=None,  
-        probs=None,
+        probs=probs,
         next_tokens=next_tokens,  # Return sampled next tokens instead of logits
         past_key_values=outputs.past_key_values,
         hidden_states=outputs.hidden_states,
