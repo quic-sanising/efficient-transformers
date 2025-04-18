@@ -290,29 +290,30 @@ def sampler_forward(
         min_p_mask = top_probs < scaled_min_p  # (batch_size * spec_length, Constants.MAX_TOP_K_IDS)
         topk_values_asc[min_p_mask] = torch.finfo(torch.float16).min
 
-    # Update the logits
-    # TODO (Optimization): Only need logits for probs when self.return_pdfs is True
-    logits.fill_(torch.finfo(torch.float16).min)
-    logits = logits.scatter(1, topk_indices_asc, topk_values_asc)  # (batch_size * spec_length, vocab_size)
-
-    # Softmax
-    probs = torch.softmax(logits, dim=1)  # (batch_size * spec_length, vocab_size)
-    if self.return_pds:
+    if self.return_pdfs:
+        # Update the logits
+        logits.fill_(torch.finfo(torch.float16).min)
+        logits = logits.scatter(1, topk_indices_asc, topk_values_asc)  # (batch_size * spec_length, vocab_size)
+        # Softmax
+        probs = torch.softmax(logits, dim=1)  # (batch_size * spec_length, vocab_size)
         return QEffCausalLMOutputWithPast(
-        loss=None,
-        logits=probs.reshape(-1, spec_length, vocab_size),  # Return probabilities instead of logits
-        past_key_values=outputs.past_key_values,
-        hidden_states=outputs.hidden_states,
-        attentions=outputs.attentions,
-        repetition_penalty_retain_state=repetition_penalty_retain_state,
-        presence_penalty_retain_state=presence_penalty_retain_state,
-    )
+            loss=None,
+            logits=probs.reshape(-1, spec_length, vocab_size),  # Return probabilities instead of logits
+            past_key_values=outputs.past_key_values,
+            hidden_states=outputs.hidden_states,
+            attentions=outputs.attentions,
+            repetition_penalty_retain_state=repetition_penalty_retain_state,
+            presence_penalty_retain_state=presence_penalty_retain_state,
+        )
+
+    # Random Sampling
+    topk_probs_asc = torch.softmax(topk_values_asc, dim=1)  # (batch_size * spec_length, Constants.MAX_TOP_K_IDS)
+    gumbel_noise = -torch.log(-torch.log(random_numbers.repeat(spec_length, 1)))  # Gumbel-Max Trick
+    y = topk_probs_asc + gumbel_noise  
+    random_samples_indices = torch.argmax(y, dim=1, keepdim=True) 
+    random_samples = torch.gather(topk_indices_asc, 1, random_samples_indices)  # (batch_size * spec_length, 1)
 
     # Sample the next tokens
-    # TODO (Optimization): Perform random sampling only on topk_values_asc
-    gumbel_noise = -torch.log(-torch.log(random_numbers.repeat(spec_length, 1)))  # Gumbel-Max Trick
-    y = probs + gumbel_noise
-    random_samples = torch.argmax(y, dim=1, keepdim=True)  # Random Sampling
     next_tokens = torch.where(temperatures == 0, greedy_samples, random_samples).reshape(-1, spec_length, 1)  # (batch_size, spec_length, 1)
     return QEffCausalLMOutputWithPast(
         loss=None,
