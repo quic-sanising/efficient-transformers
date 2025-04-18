@@ -310,7 +310,7 @@ def sampler_forward(
         logits.fill_(torch.finfo(torch.float16).min)
         logits = logits.scatter(1, topk_indices_asc, topk_values_asc)  # (batch_size * spec_length, vocab_size)
         # Softmax
-        probs = torch.softmax(logits, dim=1)  # (batch_size * spec_length, vocab_size)
+        probs = torch.softmax(logits, dim=1).reshape(-1, spec_length, vocab_size)  # (batch_size, spec_length, vocab_size)
 
     return QEffCausalLMOutputWithPast(
         loss=None,
