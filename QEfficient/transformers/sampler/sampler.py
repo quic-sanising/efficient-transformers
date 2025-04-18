@@ -264,8 +264,8 @@ def sampler_forward(
 
     # Temperature Scaling
     temperatures = temperatures.repeat(spec_length, 1)  # (batch_size, 1) -> (batch_size * spec_length, 1)
-    logits = torch.where(temperatures != 0, logits / temperatures, logits)
-
+    logits /= temperatures
+    
     # Top K
     # TODO (Optimization): if (top_ks != -1 or top_ks != Constants.MAX_TOP_K_IDS).any() is False: skip but will need topk_values_asc and topk_indices_asc
     topk_values, topk_indices = torch.topk(logits, k=Constants.MAX_TOP_K_IDS, dim=1)  # (batch_size * spec_length, vocab_size)
