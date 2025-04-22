@@ -18,7 +18,7 @@ tensor_slices=(4)
 for num_devices in "${tensor_slices[@]}"; do
 
     # ---Without sampler---
-    base_cmd_wo="python3 ${qpc_base_dir}/run_sampler_copy2.py --model_name $model_name --no_include_sampler --no_is_tlm --no_return_pdfs --sequence_length $sequence_length --k $k --spec_length $spec_length --seed $seed --parent_directory $qpc_base_dir --num_devices $num_devices --num_cores $num_cores"
+    base_cmd_wo="python3 ${qpc_base_dir}/run_sampler_copy2.py --model_name $model_name --no_include_sampler --no_is_tlm --no_return_pdfs --sequence_length $sequence_length --k $k --spec_length $spec_length --seed $seed --parent_directory $qpc_base_dir --num_devices $num_devices --num_cores $num_cores --kv-cache-dtype mxint8 --quantization mxfp6"
 
     for batch_size in "${batch_sizes[@]}"; do
         for ctx_length in "${ctx_lengths[@]}"; do
@@ -50,7 +50,7 @@ EOL
     done
 
     # ---With sampler---
-    base_cmd_w="python3 ${qpc_base_dir}/run_sampler_copy2.py --model_name $model_name --include_sampler --no_is_tlm --no_return_pdfs --sequence_length $sequence_length --k $k --spec_length $spec_length --seed $seed --parent_directory $qpc_base_dir --num_devices $num_devices --num_cores $num_cores"
+    base_cmd_w="python3 ${qpc_base_dir}/run_sampler_copy2.py --model_name $model_name --include_sampler --no_is_tlm --no_return_pdfs --sequence_length $sequence_length --k $k --spec_length $spec_length --seed $seed --parent_directory $qpc_base_dir --num_devices $num_devices --num_cores $num_cores --kv-cache-dtype mxint8 --quantization mxfp6"
 
     for batch_size in "${batch_sizes[@]}"; do
         for ctx_length in "${ctx_lengths[@]}"; do
