@@ -63,7 +63,9 @@ ONNX_EXPORT_EXAMPLE_NLK = 2  # Number of Logits to Keep
 ONNX_EXPORT_EXAMPLE_MAX_TOP_K_IDS = 512
 ONNX_EXPORT_OPSET = 13
 
-COMPILER = ["/opt/qti-aic/exec/qaic-exec", "-aic-hw", "-aic-hw-version=2.0", "-stats-level=70"]
+COMPILER = ["/opt/qti-aic/exec/qaic-exec", "-aic-hw", "-aic-hw-version=2.0", 
+            # "-stats-level=70"
+            ]
 
 # InternVL constants
 # Fixing the feature size with reference to OpenGVLab/InternVL2_5-1B, OpenGVLab/InternVL2_5-38B and OpenGVLab/InternVL2_5-78B
