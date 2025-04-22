@@ -10,7 +10,7 @@ from QEfficient.transformers.sampler.test_sampler.make_inputs import write_io_fi
 def initialize_model(model_name, include_sampler, is_tlm, return_pdfs):
     qeff_model = AutoModelForCausalLM.from_pretrained(
         model_name,
-        num_hidden_layers=2,
+        # num_hidden_layers=2,
         continuous_batching=True,
         include_sampler=include_sampler,
         is_tlm=is_tlm,
@@ -27,7 +27,7 @@ def export_model(qeff_model, directory_path):
 
 
 def compile_model(
-    qeff_model, compile_directory, sequence_length, ctx_length, batch_size, num_devices, num_cores, spec_length, device_id=0,
+    qeff_model, compile_directory, sequence_length, ctx_length, batch_size, num_devices, num_cores, spec_length, device_id=0, mxint8_kv_cache=False, mxfp6_matmul=False, 
 ):
     # if onnx_path:
     #     generated_qpc_path = qeff_model.compile(
@@ -50,6 +50,8 @@ def compile_model(
         num_cores=num_cores,
         num_speculative_tokens=spec_length - 1,
         # device_id=device_id,
+        mxint8_kv_cache=mxint8_kv_cache,
+        mxfp6_matmul=mxfp6_matmul,
     )
     print(generated_qpc_path)
     return generated_qpc_path
@@ -164,7 +166,8 @@ def main():
     parser.add_argument("--num_devices", type=int, required=False, default=1)
     parser.add_argument("--num_cores", type=int, required=False, default=16)
     parser.add_argument("--device_id", type=int, required=False, default=0)
-
+    parser.add_argument("--kv-cache-dtype", type=str, required=False, default="mxint8")
+    parser.add_argument("--quantization", type=str, required=False, default="mxfp6")
     args = parser.parse_args()
     # print(args.__dict__)
     # print("\n")
@@ -201,6 +204,8 @@ def main():
         num_cores=args.num_cores,
         spec_length=args.spec_length,
         device_id=args.device_id,
+        mxint8_kv_cache=args.kv_cache_dtype=="mxint8",
+        mxfp6_matmul=args.quantization=="mxfp6",
     )
     
     # inputs = generate_inputs(
