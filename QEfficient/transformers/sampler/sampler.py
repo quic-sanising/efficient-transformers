@@ -217,8 +217,8 @@ def sampler_forward(
 
     # Select relevant rows
     batch_index_reshaped = batch_index.view(-1)
-    past_repetition_penalty_buffer_selected = torch.index_select(past_repetition_penalty_buffer, 0, batch_index_reshaped)
-    past_presence_penalty_buffer_selected = torch.index_select(past_presence_penalty_buffer, 0, batch_index_reshaped)
+    past_repetition_penalty_buffer_selected = past_repetition_penalty_buffer[batch_index_reshaped]
+    past_presence_penalty_buffer_selected = past_presence_penalty_buffer[batch_index_reshaped]
 
     logits = logits.reshape(-1, vocab_size)  # Reshape tensor to 2D
 
