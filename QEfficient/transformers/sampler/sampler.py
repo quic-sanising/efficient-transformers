@@ -252,19 +252,6 @@ def sampler_forward(
             past_presence_penalty_buffer=past_presence_penalty_buffer,
         )
 
-    # Greedy Sampling
-    greedy_samples = torch.argmax(logits, dim=1, keepdim=True)  # (batch_size * spec_length, 1)
-    if (temperatures == 0).all() and self.return_pdfs == False:
-        return QEffCausalLMOutputWithPast(
-            loss=None,
-            logits=greedy_samples.reshape(-1, spec_length, 1),  # Return sampled next tokens instead of logits
-            past_key_values=outputs.past_key_values,
-            hidden_states=outputs.hidden_states,
-            attentions=outputs.attentions,
-            repetition_penalty_retain_state=repetition_penalty_retain_state,
-            presence_penalty_retain_state=presence_penalty_retain_state,
-        )
-
     # Repetition Penalty
     if (repetition_penalties != 1.).any():
         repetition_penalties = repetition_penalties.repeat(spec_length, vocab_size)  # (batch_size, 1) -> (batch_size * spec_length, vocab_size)
