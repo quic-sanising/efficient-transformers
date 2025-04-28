@@ -1,5 +1,8 @@
+import numpy as np
 import pytest
 import torch
+
+from QEfficient.utils.constants import Constants
 
 
 def pytest_addoption(parser):
@@ -60,6 +63,7 @@ def init(pytestconfig):
     ctx_length = pytestconfig.getoption('ctx_length')
     
     torch.set_printoptions(threshold=torch.inf)
+    np.set_printoptions(threshold=np.inf)
 
 
 @pytest.fixture
@@ -108,7 +112,7 @@ def setup_data_top_ks(batch_size, vocab_size):
     torch.manual_seed(seed)
 
     logits = torch.randn(batch_size, 1, vocab_size)
-    top_ks = torch.randint(1, vocab_size, (batch_size,))  # Between 1 and vocab_size
+    top_ks = torch.randint(1, 512, (batch_size, 1))  # Between 1 and vocab_size
 
     print("top_ks", top_ks)
 
@@ -208,22 +212,24 @@ def setup_data(sequence_length, batch_size, vocab_size, ctx_length):
     output_token_ids = torch.randint(low=0, high=vocab_size, size=(batch_size, ctx_length))
 
     logits = torch.randn(batch_size, 1, vocab_size)
+    
+    position_ids = torch.full((batch_size, 1), sequence_length + 1)
+    batch_index = torch.arange(batch_size, dtype=torch.int64).reshape(batch_size, 1)
+    past_repetition_penalty_buffer = torch.zeros(batch_size, vocab_size, dtype=torch.bool)
+    past_presence_penalty_buffer = torch.zeros(batch_size, vocab_size, dtype=torch.bool)
 
-    repetition_penalty_retain_state = torch.zeros(batch_size, vocab_size, dtype=torch.int32)
-    presence_penalty_retain_state = torch.zeros(batch_size, vocab_size, dtype=torch.int32)
+    past_repetition_penalty_buffer.scatter_(1, prompt_token_ids, 1)
+    past_repetition_penalty_buffer.scatter_(1, output_token_ids[:, :-1], 1)
+    past_presence_penalty_buffer.scatter_(1, output_token_ids[:, :-1], 1)
 
-    repetition_penalty_retain_state.scatter_(1, prompt_token_ids, 1)
-    repetition_penalty_retain_state.scatter_(1, output_token_ids[:, :-1], 1)
-    presence_penalty_retain_state.scatter_(1, output_token_ids[:, :-1], 1)
+    repetition_penalties = torch.randint(1, 21, (batch_size, 1)) / 10.0
+    presence_penalties = torch.randint(-10, 10, (batch_size, 1)) / 10.0
 
-    repetition_penalties = torch.randint(1, 21, (batch_size,)) / 10.0
-    presence_penalties = torch.randint(-10, 10, (batch_size,)) / 10.0
+    temperatures = torch.randint(1, 11, (batch_size, 1)) / 10.0
 
-    temperatures = torch.randint(1, 11, (batch_size,)) / 10.0
-
-    top_ks = torch.randint(1, vocab_size, (batch_size,))  # Between 1 and vocab_size
-    top_ps = torch.randint(50, 100, (batch_size,)) / 100.0  # Between 0.50 and 0.99
-    min_ps = torch.randint(50, 100, (batch_size,)) / 100.0  # Between 0.50 and 0.99
+    top_ks = torch.randint(1, Constants.MAX_TOP_K_IDS, (batch_size, 1))  # Between 1 and Constants.MAX_TOP_K_IDS
+    top_ps = torch.randint(50, 100, (batch_size, 1)) / 100.0  # Between 0.50 and 0.99
+    min_ps = torch.randint(50, 100, (batch_size, 1)) / 100.0  # Between 0.50 and 0.99
 
     return {
         "seed": seed,
@@ -234,8 +240,10 @@ def setup_data(sequence_length, batch_size, vocab_size, ctx_length):
         "prompt_token_ids": prompt_token_ids,
         "output_token_ids": output_token_ids,
         "logits": logits,
-        "repetition_penalty_retain_state": repetition_penalty_retain_state,
-        "presence_penalty_retain_state": presence_penalty_retain_state,
+        "position_ids": position_ids,
+        "batch_index": batch_index,
+        "past_repetition_penalty_buffer": past_repetition_penalty_buffer,
+        "past_presence_penalty_buffer": past_presence_penalty_buffer,
         "repetition_penalties": repetition_penalties,
         "presence_penalties": presence_penalties,
         "temperatures": temperatures,
