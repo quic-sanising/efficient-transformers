@@ -1,10 +1,14 @@
 #!/bin/bash
 
 # Define the configurations
-sequence_lengths=(8 16 64 128)
-batch_sizes=(1 4 8 16 32)
-vocab_sizes=(10 100 1024 2048 4096)
-ctx_lengths=(128 512 4096 8192)
+# sequence_lengths=(8 16 64 128)
+# batch_sizes=(1 4 8 16 32)
+# vocab_sizes=(10 100 1024 2048 4096)
+# ctx_lengths=(128 512 4096 8192)
+sequence_lengths=(128)
+batch_sizes=(4)
+vocab_sizes=(128256)
+ctx_lengths=(256)
 
 # Ensure the output directory exists
 output_dir="./pytest_outputs"
@@ -15,7 +19,7 @@ success_count=0
 total_count=0
 
 # CPU vs QAIC
-output_file="$output_dir/test_qaic_sampler__test_cpu_vs_qaic.txt"
+output_file="$output_dir/test_qaic_sampler__test_cpu_vs_qaic.log"
 rm $output_file
 
 for sequence_length in "${sequence_lengths[@]}"; do
@@ -26,7 +30,8 @@ for sequence_length in "${sequence_lengths[@]}"; do
 					--sequence-length=$sequence_length \
 					--batch-size=$batch_size \
 					--vocab-size=$vocab_size \
-					--ctx-length=$ctx_length 2>&1 | tee -a $output_file)
+					--ctx-length=$ctx_length \
+					--num-devices=4 2>&1 | tee -a $output_file)
 
 				success_count=$((success_count + $(echo "$pytest_output" | grep -c "PASSED")))
 				total_count=$((total_count + 1))
@@ -39,11 +44,11 @@ echo "No. of tests passed: ($success_count/$total_count)" 2>&1 | tee -a $output_
 
 # Generate opstats
 mkdir -p "./outputs_from_qpcs/"
-api_test_cmd="/opt/qti-aic/exec/qaic-api-test -t ./on_device_sampling_qpcs/ -n 10 --aic-profiling-type raw_device_stats --aic-profiling-start-iter 5 --aic-profiling-num-samples 1 --aic-batch-json-input ${output_dir}/aic_batch_io.json --write-output-dir ./outputs_from_qpcs/ -d 10 --aic-profiling-out-dir ./outputs_from_qpcs/"
+api_test_cmd="/opt/qti-aic/exec/qaic-api-test -t ./on_device_sampling_qpcs/ -n 10 --aic-profiling-type raw_device_stats --aic-profiling-start-iter 5 --aic-profiling-num-samples 1 --aic-batch-json-input ${output_dir}/aic_batch_io.json --write-output-dir ./outputs_from_qpcs/ -D 11:12:13:14 --aic-profiling-out-dir ./outputs_from_qpcs/"
 echo $api_test_cmd
-$api_test_cmd
+$api_test_cmd 2>&1 | tee -a $output_file
 
 mkdir -p "./opstats/"
 opstats_cmd="/opt/qti-aic/exec/qaic-opstats --qpc ./on_device_sampling_qpcs/programqpc.bin --input-dir ./outputs_from_qpcs/ --output-dir ./opstats/ --summary --trace" 
 echo $opstats_cmd
-$opstats_cmd
+$opstats_cmd 2>&1 | tee -a $output_file

@@ -1,5 +1,6 @@
 from copy import deepcopy
 from time import perf_counter
+import json
 import subprocess
 import torch
 import torch.nn as nn
@@ -244,6 +245,26 @@ def test_cpu_vs_qaic(setup_data):
         f"-aic-binary-dir={qpc_dir_path}",
         "-mxfp6-matmul",
     ]
+    # Write mdp_config.json file
+    mdp_ts_num_devices = setup_data.get("num_devices", 1)
+    if mdp_ts_num_devices > 1:
+        mdp_ts_json = f"./mdp_ts_{mdp_ts_num_devices}.json"
+        with open(mdp_ts_json, "w") as fp:
+            json.dump(
+                {
+                    "connections": [{"devices": list(range(mdp_ts_num_devices)), "type": "p2p"}],
+                    "partitions": [
+                        {
+                            "name": "Partition0",
+                            "devices": [{"deviceId": d, "numCores": 16} for d in range(mdp_ts_num_devices)],
+                        }
+                    ],
+                },
+                fp,
+                indent=4,
+            )
+        compile_cmd.append(f"-mdp-load-partition-config={mdp_ts_json}")
+    
     subprocess.run(["rm", "-rf", f"{qpc_dir_path}"])
     result = subprocess.run(compile_cmd, capture_output=True, text=True)
     # print(result.stdout)
@@ -251,7 +272,7 @@ def test_cpu_vs_qaic(setup_data):
         print(result.stderr)
 
     # Run QPC file
-    session = QAICInferenceSession(qpc_path=qpc_dir_path, device_ids=[10], enable_debug_logs=False)
+    session = QAICInferenceSession(qpc_path=qpc_dir_path, device_ids=list(range(11, 11 + mdp_ts_num_devices)), enable_debug_logs=False)
     inputs = {
         # "input_ids": output_token_ids[:, -1:].detach().cpu().numpy(),
         # "position_ids": position_ids.detach().cpu().numpy(),
