@@ -6,6 +6,7 @@ import torch.nn as nn
 
 from QEfficient.generation.cloud_infer import QAICInferenceSession
 from QEfficient.transformers.sampler.test_sampler.sampler import sampler_forward
+from QEfficient.transformers.sampler.test_sampler.make_inputs import write_io_files
 from QEfficient.transformers.sampler.test_sampler.utils import print_difference_in_tensors
 from QEfficient.transformers.sampler.test_sampler.vllm_sampler import (
     Sampler,
@@ -253,7 +254,7 @@ def test_cpu_vs_qaic(setup_data):
     session = QAICInferenceSession(qpc_path=qpc_dir_path, device_ids=[10], enable_debug_logs=False)
     inputs = {
         # "input_ids": output_token_ids[:, -1:].detach().cpu().numpy(),
-        "position_ids": position_ids.detach().cpu().numpy(),
+        # "position_ids": position_ids.detach().cpu().numpy(),
         "batch_index": batch_index.detach().cpu().numpy(),
         "input_logits": qaic_logits.detach().cpu().numpy(),
         "last_accepted_output_tokens": output_token_ids[:, -1:].detach().cpu().numpy(),
@@ -267,6 +268,9 @@ def test_cpu_vs_qaic(setup_data):
         "min_ps": min_ps.detach().cpu().numpy(),
     }
     print("\nQAIC Input\n", inputs)
+    
+    write_io_files(inputs, dict(), "./pytest_outputs/", f"decode", "aic_batch_io", True)
+    
     qaic_start_time = perf_counter()
     outputs = session.run(inputs)
     qaic_end_time = perf_counter()

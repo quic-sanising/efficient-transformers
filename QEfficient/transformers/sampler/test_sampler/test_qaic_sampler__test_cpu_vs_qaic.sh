@@ -36,3 +36,14 @@ for sequence_length in "${sequence_lengths[@]}"; do
 done
 
 echo "No. of tests passed: ($success_count/$total_count)" 2>&1 | tee -a $output_file
+
+# Generate opstats
+mkdir -p "./outputs_from_qpcs/"
+api_test_cmd="/opt/qti-aic/exec/qaic-api-test -t ./on_device_sampling_qpcs/ -n 10 --aic-profiling-type raw_device_stats --aic-profiling-start-iter 5 --aic-profiling-num-samples 1 --aic-batch-json-input ${output_dir}/aic_batch_io.json --write-output-dir ./outputs_from_qpcs/ -d 10 --aic-profiling-out-dir ./outputs_from_qpcs/"
+echo $api_test_cmd
+$api_test_cmd
+
+mkdir -p "./opstats/"
+opstats_cmd="/opt/qti-aic/exec/qaic-opstats --qpc ./on_device_sampling_qpcs/programqpc.bin --input-dir ./outputs_from_qpcs/ --output-dir ./opstats/ --summary --trace" 
+echo $opstats_cmd
+$opstats_cmd
