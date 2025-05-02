@@ -1,8 +1,10 @@
+import copy
 import numpy as np
 import pytest
 import torch
 
 from QEfficient.utils.constants import Constants
+from QEfficient.customop import CtxScatterFuncCB3D
 
 
 def pytest_addoption(parser):
@@ -79,12 +81,9 @@ def init(pytestconfig):
 
 @pytest.fixture
 def setup_data_penalties(sequence_length, batch_size, vocab_size, ctx_length):
-    import copy
     import numpy as np
-    from QEfficient.customop import CtxScatterFuncCB3D
 
-    # seed = np.random.randint(1, 101)
-    seed = 50
+    seed = np.random.randint(1, 101)
     torch.manual_seed(seed)
 
     prompt_token_ids = torch.randint(low=0, high=vocab_size, size=(batch_size, sequence_length))
@@ -96,6 +95,8 @@ def setup_data_penalties(sequence_length, batch_size, vocab_size, ctx_length):
     full_batch_size = batch_size + 2
 
     position_ids = torch.full((batch_size, 1), sequence_length + 1)
+    # position_ids = torch.arange(sequence_length).unsqueeze(0).repeat(batch_size, 1)
+
     batch_index = torch.randperm(full_batch_size)[:batch_size].reshape(batch_size, 1)
 
     past_repetition_penalty_buffer = torch.zeros(full_batch_size, vocab_size, dtype=torch.bool)
@@ -241,15 +242,22 @@ def setup_data(sequence_length, batch_size, vocab_size, ctx_length, num_devices)
 
     logits = torch.randn(batch_size, 1, vocab_size)
     
+    full_batch_size = batch_size + 2
+
     position_ids = torch.full((batch_size, 1), sequence_length + 1)
-    batch_index = torch.arange(batch_size, dtype=torch.int64).reshape(batch_size, 1)
-    past_repetition_penalty_buffer = torch.zeros(batch_size, vocab_size, dtype=torch.bool)
-    past_presence_penalty_buffer = torch.zeros(batch_size, vocab_size, dtype=torch.bool)
+    # position_ids = torch.arange(sequence_length).unsqueeze(0).repeat(batch_size, 1)
+    batch_index = torch.randperm(full_batch_size)[:batch_size].reshape(batch_size, 1)
 
-    past_repetition_penalty_buffer.scatter_(1, prompt_token_ids, 1)
-    past_repetition_penalty_buffer.scatter_(1, output_token_ids[:, :-1], 1)
-    past_presence_penalty_buffer.scatter_(1, output_token_ids[:, :-1], 1)
+    past_repetition_penalty_buffer = torch.zeros(full_batch_size, vocab_size, dtype=torch.bool)
+    past_presence_penalty_buffer = torch.zeros(full_batch_size, vocab_size, dtype=torch.bool)
 
+    past_repetition_penalty_buffer = CtxScatterFuncCB3D.apply(
+            past_repetition_penalty_buffer, batch_index, prompt_token_ids, torch.ones(prompt_token_ids.shape, dtype=torch.bool))
+    past_repetition_penalty_buffer = CtxScatterFuncCB3D.apply(
+            past_repetition_penalty_buffer, batch_index, output_token_ids[:, :-1], torch.ones(output_token_ids[:, :-1].shape, dtype=torch.bool))
+    past_presence_penalty_buffer = CtxScatterFuncCB3D.apply(
+            past_presence_penalty_buffer, batch_index, output_token_ids[:, :-1], torch.ones(output_token_ids[:, :-1].shape, dtype=torch.bool))
+    
     repetition_penalties = torch.randint(1, 21, (batch_size, 1)) / 10.0
     presence_penalties = torch.randint(-10, 10, (batch_size, 1)) / 10.0
 

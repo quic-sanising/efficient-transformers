@@ -50,19 +50,17 @@ def sampler_forward(
     min_ps = min_ps.to(device)
 
     # Perform Sampling
-    batch_size, spec_length, vocab_size = logits.shape
+    batch_size, spec_length, vocab_size = input_logits.shape
     logits = input_logits.reshape(-1, vocab_size)  # Reshape tensor to 2D
     # FIXME: Create 3D retain states
 
+    batch_index_reshaped = batch_index.view(-1)
     # --- Prefill ---
     if input_ids.shape[1] > spec_length:
-        prefill_indices = torch.nonzero(position_ids[:, 0] == 0)
-        if prefill_indices.shape[0] > 0:
+        if (position_ids[:, 0] == 0).any():
             # First input chunk, so initialize retain states
             mul_value = torch.ones(past_repetition_penalty_buffer.shape[0], 1, dtype=torch.bool)
-            mul_value = CtxScatterFunc3D.apply(
-                mul_value, prefill_indices, torch.zeros(prefill_indices.shape, dtype=torch.bool))
-            # mul_value[prefill_indices] = 0
+            mul_value[batch_index_reshaped] = position_ids[:, :1] != 0
             past_repetition_penalty_buffer *= mul_value
             past_presence_penalty_buffer *= mul_value
 
@@ -91,7 +89,6 @@ def sampler_forward(
             past_presence_penalty_buffer, batch_index, last_accepted_output_tokens, scatter_values)
         # TODO: For frequency retain state, first gather and then scatter
 
-    batch_index_reshaped = batch_index.view(-1)
     # Repetition Penalty
     if (repetition_penalties != 1.).any():
         past_repetition_penalty_buffer_selected = past_repetition_penalty_buffer[batch_index_reshaped].repeat(spec_length, 1)  # (batch_size, vocab_size) -> (batch_size * spec_length, vocab_size)
