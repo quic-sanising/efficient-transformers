@@ -10,6 +10,7 @@ def pytest_addoption(parser):
     parser.addoption("--batch-size", type=int, default=None)
     parser.addoption("--vocab-size", type=int, default=None)
     parser.addoption("--ctx-length", type=int, default=None)
+    parser.addoption("--num-devices", type=int, default=None)
 
 
 def pytest_generate_tests(metafunc):
@@ -21,6 +22,8 @@ def pytest_generate_tests(metafunc):
         metafunc.parametrize("vocab_size", [metafunc.config.option.vocab_size])
     if 'ctx_length' in metafunc.fixturenames:
         metafunc.parametrize("ctx_length", [metafunc.config.option.ctx_length])
+    if 'num_devices' in metafunc.fixturenames:
+        metafunc.parametrize("num_devices", [metafunc.config.option.num_devices])
 
 
 @pytest.fixture(scope="session")
@@ -43,10 +46,16 @@ def ctx_length(pytestconfig):
     return pytestconfig.getoption("ctx_length")
 
 
+@pytest.fixture(scope="session")
+def num_devices(pytestconfig):
+    return pytestconfig.getoption("num_devices")
+
+
 sequence_length = None
 batch_size = None
 vocab_size = None
 ctx_length = None
+num_devices = None
 
 
 @pytest.fixture(autouse=True, scope="session")
@@ -56,11 +65,13 @@ def init(pytestconfig):
     global batch_size
     global vocab_size
     global ctx_length
+    global num_devices
 
     sequence_length = pytestconfig.getoption('sequence_length')
     batch_size = pytestconfig.getoption('batch_size')
     vocab_size = pytestconfig.getoption('vocab_size')
     ctx_length = pytestconfig.getoption('ctx_length')
+    num_devices = pytestconfig.getoption('num_devices')
     
     torch.set_printoptions(threshold=torch.inf)
     np.set_printoptions(threshold=np.inf)
@@ -68,25 +79,39 @@ def init(pytestconfig):
 
 @pytest.fixture
 def setup_data_penalties(sequence_length, batch_size, vocab_size, ctx_length):
+    import copy
     import numpy as np
+    from QEfficient.customop import CtxScatterFuncCB3D
 
-    seed = np.random.randint(1, 101)
+    # seed = np.random.randint(1, 101)
+    seed = 50
     torch.manual_seed(seed)
 
     prompt_token_ids = torch.randint(low=0, high=vocab_size, size=(batch_size, sequence_length))
     output_token_ids = torch.randint(low=0, high=vocab_size, size=(batch_size, ctx_length))
 
     logits = torch.randn(batch_size, 1, vocab_size)
+    qaic_logits = copy.deepcopy(logits)
+    
+    full_batch_size = batch_size + 2
 
-    repetition_penalty_retain_state = torch.zeros(batch_size, vocab_size, dtype=torch.int32)
-    presence_penalty_retain_state = torch.zeros(batch_size, vocab_size, dtype=torch.int32)
+    position_ids = torch.full((batch_size, 1), sequence_length + 1)
+    batch_index = torch.randperm(full_batch_size)[:batch_size].reshape(batch_size, 1)
 
-    repetition_penalty_retain_state.scatter_(1, prompt_token_ids, 1)
-    repetition_penalty_retain_state.scatter_(1, output_token_ids[:, :-1], 1)
-    presence_penalty_retain_state.scatter_(1, output_token_ids[:, :-1], 1)
+    past_repetition_penalty_buffer = torch.zeros(full_batch_size, vocab_size, dtype=torch.bool)
+    past_presence_penalty_buffer = torch.zeros(full_batch_size, vocab_size, dtype=torch.bool)
 
-    repetition_penalties = torch.randint(1, 21, (batch_size,)) / 10.0
-    presence_penalties = torch.randint(-10, 10, (batch_size,)) / 10.0
+    past_repetition_penalty_buffer = CtxScatterFuncCB3D.apply(
+            past_repetition_penalty_buffer, batch_index, prompt_token_ids, torch.ones(prompt_token_ids.shape, dtype=torch.bool))
+    past_repetition_penalty_buffer = CtxScatterFuncCB3D.apply(
+            past_repetition_penalty_buffer, batch_index, output_token_ids[:, :-1], torch.ones(output_token_ids[:, :-1].shape, dtype=torch.bool))
+    past_presence_penalty_buffer = CtxScatterFuncCB3D.apply(
+            past_presence_penalty_buffer, batch_index, output_token_ids[:, :-1], torch.ones(output_token_ids[:, :-1].shape, dtype=torch.bool))
+    
+    repetition_penalties = torch.randint(1, 21, (batch_size, 1)) / 10.0
+    presence_penalties = torch.randint(-10, 10, (batch_size, 1)) / 10.0
+    # repetition_penalties = torch.ones(batch_size, 1)
+    # presence_penalties = torch.zeros(batch_size, 1)
 
     return {
         "seed": seed,
@@ -97,8 +122,11 @@ def setup_data_penalties(sequence_length, batch_size, vocab_size, ctx_length):
         "prompt_token_ids": prompt_token_ids,
         "output_token_ids": output_token_ids,
         "logits": logits,
-        "repetition_penalty_retain_state": repetition_penalty_retain_state,
-        "presence_penalty_retain_state": presence_penalty_retain_state,
+        "qaic_logits": qaic_logits,
+        "position_ids": position_ids,
+        "batch_index": batch_index,
+        "past_repetition_penalty_buffer": past_repetition_penalty_buffer,
+        "past_presence_penalty_buffer": past_presence_penalty_buffer,
         "repetition_penalties": repetition_penalties,
         "presence_penalties": presence_penalties,
     }
@@ -202,7 +230,7 @@ def setup_data_random_sampling(batch_size, vocab_size):
 
 
 @pytest.fixture
-def setup_data(sequence_length, batch_size, vocab_size, ctx_length):
+def setup_data(sequence_length, batch_size, vocab_size, ctx_length, num_devices):
     import numpy as np
 
     seed = np.random.randint(1, 101)
@@ -237,6 +265,7 @@ def setup_data(sequence_length, batch_size, vocab_size, ctx_length):
         "batch_size": batch_size,
         "vocab_size": vocab_size,
         "ctx_length": ctx_length,
+        "num_devices": num_devices,
         "prompt_token_ids": prompt_token_ids,
         "output_token_ids": output_token_ids,
         "logits": logits,

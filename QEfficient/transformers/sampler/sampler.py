@@ -2,7 +2,7 @@ from dataclasses import dataclass
 import torch
 import torch.nn.functional as F
 
-# from QEfficient.customop import CtxScatterFunc
+from QEfficient.customop import CtxScatterFuncCB3D, CtxScatterFunc3D
 from QEfficient.utils.constants import Constants
 from transformers.cache_utils import Cache
 from transformers.modeling_outputs import CausalLMOutputWithPast, ModelOutput
@@ -213,30 +213,45 @@ def sampler_forward(
 
     # Perform Sampling
     batch_size, spec_length, vocab_size = logits.shape
-
-    # Select relevant rows
-    batch_index_reshaped = batch_index.view(-1)
-    past_repetition_penalty_buffer_selected = past_repetition_penalty_buffer[batch_index_reshaped]
-    past_presence_penalty_buffer_selected = past_presence_penalty_buffer[batch_index_reshaped]
-
     logits = logits.reshape(-1, vocab_size)  # Reshape tensor to 2D
+    # FIXME: Create 3D retain states
 
-    if input_ids.shape[1] > spec_length:  # Prefill phase, initialize retained states
-        # TODO: Replace scatter_ with CtxScatterFunc; Replace -1 with int_max while exporting on onnx
-        # past_repetition_penalty_buffer_selected = CtxScatterFunc.apply(past_repetition_penalty_buffer_selected.unsqueeze(1), input_ids, 1).squeeze(1)
-        if position_ids[0, 0] == 0:
-            past_repetition_penalty_buffer_selected = torch.zeros(past_repetition_penalty_buffer_selected.shape, dtype=torch.bool)
-            past_presence_penalty_buffer_selected = torch.zeros(past_presence_penalty_buffer_selected.shape, dtype=torch.bool)
-        past_repetition_penalty_buffer_selected.scatter_(1, input_ids, 1)
+    # --- Prefill ---
+    if input_ids.shape[1] > spec_length:
+        prefill_indices = torch.nonzero(position_ids[:, 0] == 0)
+        if prefill_indices.shape[0] > 0:
+            # First input chunk, so initialize retain states
+            mul_value = torch.ones(past_repetition_penalty_buffer.shape[0], 1, dtype=torch.bool)
+            mul_value = CtxScatterFunc3D.apply(
+                mul_value, prefill_indices, torch.zeros(prefill_indices.shape, dtype=torch.bool))
+            # mul_value[prefill_indices] = 0
+            past_repetition_penalty_buffer *= mul_value
+            past_presence_penalty_buffer *= mul_value
 
-    else:  # Decode phase, update retained states
-        past_repetition_penalty_buffer_selected.scatter_(1, last_accepted_output_tokens, 1)
-        past_presence_penalty_buffer_selected.scatter_(1, last_accepted_output_tokens, 1)
+        # Mask out-of-bounds or invalid position_ids or input_ids
+        input_ids = torch.where(position_ids == -1, -1, input_ids)
+        input_ids = torch.where(
+            (input_ids < 0) | (input_ids >= vocab_size), torch.iinfo(torch.int32).max, input_ids)
+
+        # Chunked input, so update retain states
+        past_repetition_penalty_buffer = CtxScatterFuncCB3D.apply(
+            past_repetition_penalty_buffer, batch_index, input_ids, torch.ones(input_ids.shape, dtype=torch.bool))
+
+    # --- Decode ---
+    else:
+        # Mask out-of-bounds or invalid position_ids or last_accepted_output_tokens
+        last_accepted_output_tokens = torch.where(position_ids == -1, -1, last_accepted_output_tokens)
+        last_accepted_output_tokens = torch.where(
+            (last_accepted_output_tokens < 0) | (last_accepted_output_tokens >= vocab_size), torch.iinfo(torch.int32).max, last_accepted_output_tokens)
+        
+        # Update retained states
+        scatter_values = torch.ones(
+            last_accepted_output_tokens.shape, dtype=torch.bool)
+        past_repetition_penalty_buffer = CtxScatterFuncCB3D.apply(
+            past_repetition_penalty_buffer, batch_index, last_accepted_output_tokens, scatter_values)
+        past_presence_penalty_buffer = CtxScatterFuncCB3D.apply(
+            past_presence_penalty_buffer, batch_index, last_accepted_output_tokens, scatter_values)
         # TODO: For frequency retain state, first gather and then scatter
-
-    # Update relevant rows in original tensors
-    past_repetition_penalty_buffer[batch_index_reshaped] = past_repetition_penalty_buffer_selected
-    past_presence_penalty_buffer[batch_index_reshaped] = past_presence_penalty_buffer_selected
 
     # Greedy Sampling
     greedy_samples = torch.argmax(logits, dim=1, keepdim=True)  # (batch_size * spec_length, 1)
@@ -252,17 +267,17 @@ def sampler_forward(
             past_presence_penalty_buffer=past_presence_penalty_buffer,
         )
 
+    batch_index_reshaped = batch_index.view(-1)
     # Repetition Penalty
     if (repetition_penalties != 1.).any():
-        repetition_penalties = repetition_penalties.repeat(spec_length, vocab_size)  # (batch_size, 1) -> (batch_size * spec_length, vocab_size)
-        past_repetition_penalty_buffer_selected = past_repetition_penalty_buffer_selected.repeat(spec_length, 1)  # (batch_size, vocab_size) -> (batch_size * spec_length, vocab_size)
-        repetition_penalties[past_repetition_penalty_buffer_selected == 0] = 1.0
-        logits = torch.where(logits > 0, logits / repetition_penalties, logits * repetition_penalties)
+        past_repetition_penalty_buffer_selected = past_repetition_penalty_buffer[batch_index_reshaped].repeat(spec_length, 1)  # (batch_size * spec_length, vocab_size)
+        repetition_penalties_mask = torch.where(past_repetition_penalty_buffer_selected, repetition_penalties, 1.)
+        logits *= (repetition_penalties_mask ** (-torch.sign(logits)))
 
     # Presence Penalty
     if (presence_penalties != 0.).any():
         presence_penalties = presence_penalties.repeat(spec_length, 1)  # (batch_size, 1) -> (batch_size * spec_length, 1)
-        past_presence_penalty_buffer_selected = past_presence_penalty_buffer_selected.repeat(spec_length, 1)  # (batch_size, vocab_size) -> (batch_size * spec_length, vocab_size)
+        past_presence_penalty_buffer_selected = past_presence_penalty_buffer[batch_index_reshaped].repeat(spec_length, 1)  # (batch_size, vocab_size) -> (batch_size * spec_length, vocab_size)
         logits -= presence_penalties * past_presence_penalty_buffer_selected
 
     # TODO: Frequency Penalty

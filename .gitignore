@@ -94,6 +94,7 @@ QEfficient/transformers/sampler/test_sampler/on_device_sampling_onnx
 QEfficient/transformers/sampler/test_sampler/on_device_sampling_qpcs
 QEfficient/transformers/sampler/test_sampler/outputs_from_qpcs
 QEfficient/transformers/sampler/test_sampler/pytest_outputs
+QEfficient/transformers/sampler/test_sampler/opstats
 QEfficient/transformers/sampler/test_sampler/*.bin
 QEfficient/transformers/sampler/test_sampler/dump_ir_graphs
 *.log

@@ -1,10 +1,14 @@
 #!/bin/bash
 
 # Define the configurations
-sequence_lengths=(8 16 64 128)
-batch_sizes=(1 4 8 16 32)
-vocab_sizes=(10 100 1024 2048 4096)
-ctx_lengths=(128 512 4096 8192)
+sequence_lengths=(8 128)
+batch_sizes=(1 2 8 16)
+vocab_sizes=(1024 4096 32000)
+ctx_lengths=(256 512 8192)
+# sequence_lengths=(128)
+# batch_sizes=(1 4 8)
+# vocab_sizes=(1024)
+# ctx_lengths=(128 512)
 
 # Ensure the output directory exists
 output_dir="./pytest_outputs"
@@ -15,7 +19,7 @@ success_count=0
 total_count=0
 
 # CPU vs vLLM CPU
-output_file="$output_dir/test_qaic_sampler__test_cpu_vs_vllm_cpu.txt"
+output_file="$output_dir/test_qaic_sampler__test_cpu_vs_vllm_cpu.log"
 rm $output_file
 
 for sequence_length in "${sequence_lengths[@]}"; do

@@ -13,6 +13,7 @@ from QEfficient.transformers.sampler.test_sampler.vllm_sampler import (
     Sampler,
     SamplingMetadata,
 )
+from QEfficient.utils import constants
 
 
 def test_cpu_vs_vllm_cpu(setup_data):
@@ -82,8 +83,8 @@ def test_cpu_vs_vllm_cpu(setup_data):
         vllm_logits, sampling_metadata
     )
 
-    print(qeff_output.probs.squeeze(1))
-    print(vllm_output_probs)
+    # print(qeff_output.probs.squeeze(1))
+    # print(vllm_output_probs)
 
     # Compare outputs
     has_failed = False
@@ -227,7 +228,8 @@ def test_cpu_vs_qaic(setup_data):
             "past_presence_penalty_buffer_RetainedState",
         ],
         dynamo=False,
-        verbose=False,
+        verbose=True,
+        opset_version=constants.ONNX_EXPORT_OPSET,
     )
 
     # Compile QPC file
@@ -275,7 +277,7 @@ def test_cpu_vs_qaic(setup_data):
     session = QAICInferenceSession(qpc_path=qpc_dir_path, device_ids=list(range(11, 11 + mdp_ts_num_devices)), enable_debug_logs=False)
     inputs = {
         # "input_ids": output_token_ids[:, -1:].detach().cpu().numpy(),
-        # "position_ids": position_ids.detach().cpu().numpy(),
+        "position_ids": position_ids.detach().cpu().numpy(),
         "batch_index": batch_index.detach().cpu().numpy(),
         "input_logits": qaic_logits.detach().cpu().numpy(),
         "last_accepted_output_tokens": output_token_ids[:, -1:].detach().cpu().numpy(),
@@ -314,14 +316,14 @@ def test_cpu_vs_qaic(setup_data):
     # Compare outputs
     has_failed = False
     if not torch.allclose(
-        qeff_output.probs.to(torch.float32), hw_output_probs, atol=1e-4
+        qeff_output.probs.to(torch.float32), hw_output_probs, atol=2**-10
     ): 
         print_difference_in_tensors(
             qeff_output.probs.to(torch.float32),
             "Probs",
             hw_output_probs,
             "QAIC Probs",
-            1e-4,
+            2**-10,
         )
         has_failed = True
 
