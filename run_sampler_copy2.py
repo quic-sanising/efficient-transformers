@@ -7,14 +7,12 @@ from QEfficient import QEFFAutoModelForCausalLM as AutoModelForCausalLM
 from QEfficient.transformers.sampler.test_sampler.make_inputs import write_io_files
 
 
-def initialize_model(model_name, include_sampler, is_tlm, return_pdfs):
+def initialize_model(model_name, qaic_config):
     qeff_model = AutoModelForCausalLM.from_pretrained(
         model_name,
         # num_hidden_layers=2,
         continuous_batching=True,
-        include_sampler=include_sampler,
-        is_tlm=is_tlm,
-        return_pdfs=return_pdfs,
+        qaic_config=qaic_config,
     )
     print(f"{model_name} optimized for AI 100 \n", qeff_model)
     return qeff_model
@@ -172,12 +170,15 @@ def main():
     # print(args.__dict__)
     # print("\n")
     
+    qaic_config = {
+        "is_tlm": args.is_tlm,
+        "include_sampler": args.include_sampler,
+        "return_pdfs": args.return_pdfs,
+    }
     qeff_model = initialize_model(
         model_name=args.model_name,
         # args.num_hidden_layers,
-        include_sampler=args.include_sampler,
-        is_tlm=args.is_tlm,
-        return_pdfs=args.return_pdfs,
+        qaic_config=qaic_config,
     )
     
     directory_path = f"{args.parent_directory}/{args.model_name.split('/')[-1]}_{'w' if args.include_sampler==True else 'wo'}_sampler_ts{args.num_devices}c{args.num_cores}_bs{args.batch_size}_ctx{args.ctx_length}_seqlen{args.sequence_length}_speclen{args.spec_length}_k{args.k}"
