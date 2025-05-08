@@ -11,9 +11,9 @@ num_cores=16
 
 qpc_base_dir="/local/mnt/workspace/sanising/quic-github/efficient-transformers"
 
-batch_sizes=(2 8)
+batch_sizes=(1 2 8)
 ctx_lengths=(256 512)
-tensor_slices=(4)
+tensor_slices=(1 2 4 8)
 
 for num_devices in "${tensor_slices[@]}"; do
 
@@ -23,8 +23,8 @@ for num_devices in "${tensor_slices[@]}"; do
     for batch_size in "${batch_sizes[@]}"; do
         for ctx_length in "${ctx_lengths[@]}"; do
             script_name="${qpc_base_dir}/sampling_scripts3/compile_${model_short_name}_wo_sampler_ts${num_devices}c${num_cores}_bs${batch_size}_ctx${ctx_length}_seqlen${sequence_length}_speclen${spec_length}_k${k}.sh"
-            dump_ir_graphs_folder="/local/mnt/workspace/sanising/tmp/dump_ir_graphs/${model_short_name}_wo_sampler_ts${num_devices}c${num_cores}_bs${batch_size}_ctx${ctx_length}_seqlen${sequence_length}_speclen${spec_length}_k${k}/"
-            QAIC_COMPILER_OPTS_UNSUPPORTED="-debug-glow --aic-dump-graphs-dir=${dump_ir_graphs_folder}"
+            dump_ir_graphs_folder="/local/mnt/qt_drive/users/sanising/efficient-transformers/r760/dump_ir_graphs/${model_short_name}_wo_sampler_ts${num_devices}c${num_cores}_bs${batch_size}_ctx${ctx_length}_seqlen${sequence_length}_speclen${spec_length}_k${k}/"
+            QAIC_COMPILER_OPTS_UNSUPPORTED="-aic-split-retained-state-io -debug-glow --aic-dump-graphs-dir=${dump_ir_graphs_folder}"
 
             cat <<EOL > $script_name
 #!/bin/bash
@@ -34,10 +34,10 @@ export HF_HOME=/local/mnt/qt_drive/users/$USER/models/
 export AIC_TOOLS_DIR=/local/mnt/workspace/sanising/build_tools
 export TMPDIR=/local/mnt/workspace/sanising/tmp
 export QAIC_COMPILER_LIB=/local/mnt/workspace/sanising/compiler-glow/build/compiler-qualcomm-release-assert/lib/QAicCompilerManagers/libQAicCompiler.so
-export QAIC_COMPILER_OPTS_UNSUPPORTED="$QAIC_COMPILER_OPTS_UNSUPPORTED"
+# export QAIC_COMPILER_OPTS_UNSUPPORTED="$QAIC_COMPILER_OPTS_UNSUPPORTED"
 
-mkdir -p $dump_ir_graphs_folder
-chmod 777 $dump_ir_graphs_folder
+# mkdir -p $dump_ir_graphs_folder
+# chmod 777 $dump_ir_graphs_folder
 
 cmd="$base_cmd_wo --batch_size $batch_size --ctx_length $ctx_length"
 echo "Running command: \$cmd"
@@ -55,8 +55,8 @@ EOL
     for batch_size in "${batch_sizes[@]}"; do
         for ctx_length in "${ctx_lengths[@]}"; do
             script_name="${qpc_base_dir}/sampling_scripts3/compile_${model_short_name}_w_sampler_ts${num_devices}c${num_cores}_bs${batch_size}_ctx${ctx_length}_seqlen${sequence_length}_speclen${spec_length}_k${k}.sh"
-            dump_ir_graphs_folder="/local/mnt/workspace/sanising/tmp/dump_ir_graphs/${model_short_name}_w_sampler_ts${num_devices}c${num_cores}_bs${batch_size}_ctx${ctx_length}_seqlen${sequence_length}_speclen${spec_length}_k${k}/"
-            QAIC_COMPILER_OPTS_UNSUPPORTED="-debug-glow --aic-dump-graphs-dir=${dump_ir_graphs_folder}"
+            dump_ir_graphs_folder="/local/mnt/qt_drive/users/sanising/efficient-transformers/r760/dump_ir_graphs/${model_short_name}_w_sampler_ts${num_devices}c${num_cores}_bs${batch_size}_ctx${ctx_length}_seqlen${sequence_length}_speclen${spec_length}_k${k}/"
+            QAIC_COMPILER_OPTS_UNSUPPORTED="-aic-split-retained-state-io -debug-glow --aic-dump-graphs-dir=${dump_ir_graphs_folder}"
 
             cat <<EOL > $script_name
 #!/bin/bash
@@ -66,10 +66,10 @@ export HF_HOME=/local/mnt/qt_drive/users/$USER/models/
 export AIC_TOOLS_DIR=/local/mnt/workspace/sanising/build_tools
 export TMPDIR=/local/mnt/workspace/sanising/tmp
 export QAIC_COMPILER_LIB=/local/mnt/workspace/sanising/compiler-glow/build/compiler-qualcomm-release-assert/lib/QAicCompilerManagers/libQAicCompiler.so
-export QAIC_COMPILER_OPTS_UNSUPPORTED="$QAIC_COMPILER_OPTS_UNSUPPORTED"
+# export QAIC_COMPILER_OPTS_UNSUPPORTED="$QAIC_COMPILER_OPTS_UNSUPPORTED"
 
-mkdir -p $dump_ir_graphs_folder
-chmod 777 $dump_ir_graphs_folder
+# mkdir -p $dump_ir_graphs_folder
+# chmod 777 $dump_ir_graphs_folder
 
 cmd="$base_cmd_w --batch_size $batch_size --ctx_length $ctx_length"
 echo "Running command: \$cmd"

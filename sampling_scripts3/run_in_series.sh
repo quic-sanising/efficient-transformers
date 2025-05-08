@@ -9,12 +9,9 @@ seed=1
 parent_directory="/local/mnt/workspace/sanising/quic-github/efficient-transformers/"
 num_cores=16
 
-batch_sizes=(2 8)
+batch_sizes=(1 2 8)
 ctx_lengths=(256 512)
-tensor_slices=(4)
-# batch_sizes=(2)
-# ctx_lengths=(256)
-# tensor_slices=(4)
+tensor_slices=(1 2 4 8)
 
 for num_devices in "${tensor_slices[@]}"; do
     for batch_size in "${batch_sizes[@]}"; do

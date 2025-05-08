@@ -227,5 +227,5 @@ if __name__ == "__main__":
     main()
 
 """
-python3 /local/mnt/workspace/sanising/quic-github/efficient-transformers/run_sampler_copy2.py --model_name meta-llama/Llama-3.1-8B --include_sampler --no_is_tlm --no_return_pdfs --sequence_length 128 --k 512 --spec_length 1 --seed 1 --parent_directory /local/mnt/qt_drive/users/sanising/efficient-transformers --num_devices 1 --num_cores 16 --batch_size 2 --ctx_length 256
+python3 /local/mnt/workspace/sanising/quic-github/efficient-transformers/run_sampler_copy2.py --model_name meta-llama/Llama-3.1-8B --include_sampler --no_is_tlm --no_return_pdfs --sequence_length 128 --k 512 --spec_length 1 --seed 1 --parent_directory /local/mnt/workspace/sanising/quic-github/efficient-transformers --num_devices 1 --num_cores 16 --kv-cache-dtype mxint8 --quantization mxfp6 --batch_size 2 --ctx_length 256
 """
