@@ -227,28 +227,35 @@ def sampler_forward(
             past_presence_penalty_buffer *= mul_value
 
         # Mask out-of-bounds or invalid position_ids or input_ids
-        input_ids = torch.where(position_ids == -1, -1, input_ids)
-        input_ids = torch.where(
-            (input_ids < 0) | (input_ids >= vocab_size), torch.iinfo(torch.int32).max, input_ids)
+        input_ids = torch.where(position_ids == -1, torch.iinfo(torch.int32).max, input_ids)
 
         # Chunked input, so update retain states
         past_repetition_penalty_buffer = CtxScatterFuncCB3D.apply(
-            past_repetition_penalty_buffer, batch_index, input_ids, torch.ones(input_ids.shape, dtype=torch.bool))
+            past_repetition_penalty_buffer,
+            batch_index,
+            input_ids,
+            torch.ones(input_ids.shape, dtype=torch.bool),
+        )
 
     # --- Decode ---
     else:
         # Mask out-of-bounds or invalid position_ids or last_accepted_output_tokens
-        last_accepted_output_tokens = torch.where(position_ids == -1, -1, last_accepted_output_tokens)
-        last_accepted_output_tokens = torch.where(
-            (last_accepted_output_tokens < 0) | (last_accepted_output_tokens >= vocab_size), torch.iinfo(torch.int32).max, last_accepted_output_tokens)
-        
+        last_accepted_output_tokens = torch.where(position_ids == -1, torch.iinfo(torch.int32).max, last_accepted_output_tokens)
+
         # Update retained states
-        scatter_values = torch.ones(
-            last_accepted_output_tokens.shape, dtype=torch.bool)
+        scatter_values = torch.ones(last_accepted_output_tokens.shape, dtype=torch.bool)
         past_repetition_penalty_buffer = CtxScatterFuncCB3D.apply(
-            past_repetition_penalty_buffer, batch_index, last_accepted_output_tokens, scatter_values)
+            past_repetition_penalty_buffer,
+            batch_index,
+            last_accepted_output_tokens,
+            scatter_values,
+        )
         past_presence_penalty_buffer = CtxScatterFuncCB3D.apply(
-            past_presence_penalty_buffer, batch_index, last_accepted_output_tokens, scatter_values)
+            past_presence_penalty_buffer,
+            batch_index,
+            last_accepted_output_tokens,
+            scatter_values,
+        )
         # TODO: For frequency retain state, first gather and then scatter
 
     # Greedy Sampling
@@ -266,15 +273,17 @@ def sampler_forward(
         )
 
     # Repetition Penalty
-    if (repetition_penalties != 1.).any():
-        past_repetition_penalty_buffer_selected = past_repetition_penalty_buffer[batch_index_reshaped].repeat(spec_length, 1)  # (batch_size * spec_length, vocab_size)
-        repetition_penalties_mask = torch.where(past_repetition_penalty_buffer_selected, repetition_penalties, 1.)
-        logits *= (repetition_penalties_mask ** (-torch.sign(logits)))
+    if (repetition_penalties != 1.0).any():
+        past_repetition_penalty_buffer_selected = \
+            past_repetition_penalty_buffer[batch_index_reshaped].repeat(spec_length, 1)  # (batch_size * spec_length, vocab_size)
+        repetition_penalties_mask = torch.where(past_repetition_penalty_buffer_selected, repetition_penalties, 1.0)
+        logits *= repetition_penalties_mask ** (-torch.sign(logits))
 
     # Presence Penalty
-    if (presence_penalties != 0.).any():
+    if (presence_penalties != 0.0).any():
         presence_penalties = presence_penalties.repeat(spec_length, 1)  # (batch_size, 1) -> (batch_size * spec_length, 1)
-        past_presence_penalty_buffer_selected = past_presence_penalty_buffer[batch_index_reshaped].repeat(spec_length, 1)  # (batch_size, vocab_size) -> (batch_size * spec_length, vocab_size)
+        past_presence_penalty_buffer_selected = \
+            past_presence_penalty_buffer[batch_index_reshaped].repeat(spec_length, 1)  # (batch_size * spec_length, vocab_size)
         logits -= presence_penalties * past_presence_penalty_buffer_selected
 
     # TODO: Frequency Penalty
@@ -282,7 +291,7 @@ def sampler_forward(
     # Temperature Scaling
     temperatures = temperatures.repeat(spec_length, 1)  # (batch_size, 1) -> (batch_size * spec_length, 1)
     logits /= temperatures
-    
+
     # Top K
     # TODO (Optimization): if (top_ks != -1 or top_ks != Constants.MAX_TOP_K_IDS).any() is False: skip but will need topk_values_asc and topk_indices_asc
     topk_values, topk_indices = torch.topk(logits, k=Constants.MAX_TOP_K_IDS, dim=1)  # (batch_size * spec_length, vocab_size)
@@ -302,8 +311,11 @@ def sampler_forward(
     topk_values_asc[top_p_mask] = torch.finfo(torch.float16).min
 
     # Min P
-    if (min_ps != 0.).any():
-        scaled_min_p = torch.mul(min_ps.repeat(spec_length, 1), top_probs[:, Constants.MAX_TOP_K_IDS - 1:])  # (batch_size * spec_length, 1)
+    if (min_ps != 0.0).any():
+        scaled_min_p = torch.mul(
+            min_ps.repeat(spec_length, 1),
+            top_probs[:, Constants.MAX_TOP_K_IDS - 1 :],
+        )  # (batch_size * spec_length, 1)
         min_p_mask = top_probs < scaled_min_p  # (batch_size * spec_length, Constants.MAX_TOP_K_IDS)
         topk_values_asc[min_p_mask] = torch.finfo(torch.float16).min
 
@@ -314,12 +326,12 @@ def sampler_forward(
         logits = logits.scatter(1, topk_indices_asc, topk_values_asc)  # (batch_size * spec_length, vocab_size)
         # Softmax
         probs = torch.softmax(logits, dim=1).reshape(-1, spec_length, vocab_size)  # (batch_size, spec_length, vocab_size)
-        
+
     # Random Sampling
     topk_probs_asc = torch.softmax(topk_values_asc, dim=1)  # (batch_size * spec_length, Constants.MAX_TOP_K_IDS)
     gumbel_noise = -torch.log(-torch.log(random_numbers.repeat(spec_length, 1)))  # Gumbel-Max Trick
-    y = topk_probs_asc + gumbel_noise  
-    random_samples_indices = torch.argmax(y, dim=1, keepdim=True) 
+    y = topk_probs_asc + gumbel_noise
+    random_samples_indices = torch.argmax(y, dim=1, keepdim=True)
     random_samples = torch.gather(topk_indices_asc, 1, random_samples_indices)  # (batch_size * spec_length, 1)
 
     # Sample the next tokens
