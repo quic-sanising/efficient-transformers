@@ -38,7 +38,6 @@ from QEfficient.transformers.models.pytorch_transforms import (
     CustomOpsTransform,
     KVCacheModuleMethodMapperTransform,
     KVCacheTransform,
-    SamplerTransform,
     SpDTransform,
     VlmKVOffloadTransform,
     VlmNoKVOffloadTransform,
@@ -49,10 +48,10 @@ from QEfficient.transformers.quantizers.quant_transforms import (
     FP8DeQuantLinearToLinearTransform,
     GPTQToMatmulNbitsTransform,
 )
+from QEfficient.transformers.sampler.sampler import QEFFAutoModelWithSampler
 from QEfficient.utils import constants, get_padding_shape_from_config
 from QEfficient.utils.cache import to_hashable
 from QEfficient.utils.logging_utils import logger
-
 
 class QEFFTransformersBase(QEFFBaseModel):
     """
@@ -76,7 +75,7 @@ class QEFFTransformersBase(QEFFBaseModel):
 
     @classmethod
     @with_replaced_quantizers
-    def from_pretrained(cls, pretrained_model_name_or_path: str, qaic_config: Optional[dict] = None, *args, **kwargs):
+    def from_pretrained(cls, pretrained_model_name_or_path: str, *args, **kwargs):
         if kwargs.get("attn_implementation", None) not in {None, "eager"}:
             logger.warning('Updating attn_implementation="eager"')
 
@@ -86,7 +85,7 @@ class QEFFTransformersBase(QEFFBaseModel):
         kwargs.update({"attn_implementation": "eager", "low_cpu_mem_usage": False})
 
         model = cls._hf_auto_class.from_pretrained(pretrained_model_name_or_path, *args, **kwargs)
-        return cls(model, qaic_config=qaic_config)
+        return cls(model, pretrained_model_name_or_path=pretrained_model_name_or_path)
 
     @property
     def model_name(self) -> str:
@@ -1331,9 +1330,13 @@ class QEFFAutoModelForCausalLM(QEFFBaseModel):
         self.model, transformed = SpDTransform.apply(self.model, qaic_config, **kwargs)
         self.is_tlm = transformed
 
-        # Sampling 
-        self.model, transformed = SamplerTransform.apply(self.model, qaic_config, **kwargs)
-        self.include_sampler = transformed
+        # ---Sampling---
+        # Note: QEFFAutoModelWithSampler should be applied after all other transforms 
+        # are done. The role of the sampler is to just add nodes at the output of the 
+        # previous transform function.
+        if qaic_config is not None and (transformed := qaic_config.get("include_sampler", False)) is True:
+            self.model = QEFFAutoModelWithSampler(self.model, qaic_config, **kwargs)
+            self.include_sampler = transformed
         
     @property
     def model_name(self) -> str:
