@@ -11,9 +11,12 @@ from typing import List, Optional, Tuple, Union
 
 @dataclass
 class QEffCausalLMOutputWithPast(ModelOutput):
+    loss: Optional[torch.FloatTensor] = None
     probs: torch.FloatTensor = None
     next_tokens: torch.IntTensor = None
     past_key_values: Optional[Tuple[Tuple[torch.FloatTensor]]] = None
+    hidden_states: Optional[Tuple[torch.FloatTensor, ...]] = None
+    attentions: Optional[Tuple[torch.FloatTensor, ...]] = None
     past_repetition_penalty_buffer: Optional[torch.Tensor] = None
     past_presence_penalty_buffer: Optional[torch.Tensor] = None
 
@@ -84,6 +87,7 @@ class QEFFAutoModelWithSampler(nn.Module):
             logits_to_keep=logits_to_keep,
             **kwargs,
         )
+        breakpoint()
         logits = outputs.get("logits")
         assert logits is not None, f"{self.model.__class__.__name__} does not return logits."
 
@@ -105,11 +109,15 @@ class QEFFAutoModelWithSampler(nn.Module):
             random_numbers=random_numbers,
             return_pdfs=self.model.return_pdfs,
         )
+        breakpoint()
 
         return QEffCausalLMOutputWithPast(
+            loss=outputs.get("loss", None),
             probs=sampler_outputs.probs,
             next_tokens=sampler_outputs.next_tokens,
-            past_key_values=outputs.past_key_values,
+            past_key_values=outputs.get("past_key_values", None),
+            hidden_states=outputs.get("hidden_states", None),
+            attentions=outputs.get("attentions", None),
             past_repetition_penalty_buffer=sampler_outputs.past_repetition_penalty_buffer,
             past_presence_penalty_buffer=sampler_outputs.past_presence_penalty_buffer,
         )
