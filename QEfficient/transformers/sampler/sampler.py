@@ -11,12 +11,9 @@ from typing import List, Optional, Tuple, Union
 
 @dataclass
 class QEffCausalLMOutputWithPast(ModelOutput):
-    loss: Optional[torch.FloatTensor] = None
     probs: torch.FloatTensor = None
     next_tokens: torch.IntTensor = None
     past_key_values: Optional[Tuple[Tuple[torch.FloatTensor]]] = None
-    hidden_states: Optional[Tuple[torch.FloatTensor, ...]] = None
-    attentions: Optional[Tuple[torch.FloatTensor, ...]] = None
     past_repetition_penalty_buffer: Optional[torch.Tensor] = None
     past_presence_penalty_buffer: Optional[torch.Tensor] = None
 
@@ -43,28 +40,76 @@ class QEFFAutoModelWithSampler(nn.Module):
             return getattr(self.model, name)
 
 
-    def forward(self, **kwargs) -> Union[Tuple, CausalLMOutputWithPast]:
-        print("kwargs keys:", kwargs.keys())
+    def forward(
+        self,
+        input_ids: torch.LongTensor = None,
+        attention_mask: Optional[torch.Tensor] = None,
+        position_ids: Optional[torch.LongTensor] = None,
+        past_key_values: Optional[Union[Cache, List[torch.FloatTensor]]] = None,
+        batch_index: Optional[torch.LongTensor] = None,
+        inputs_embeds: Optional[torch.FloatTensor] = None,
+        labels: Optional[torch.LongTensor] = None,
+        use_cache: Optional[bool] = None,
+        output_attentions: Optional[bool] = None,
+        output_hidden_states: Optional[bool] = None,
+        return_dict: Optional[bool] = None,
+        cache_position: Optional[torch.LongTensor] = None,
+        logits_to_keep: Union[int, torch.Tensor] = 0,
+        last_accepted_output_tokens: Optional[torch.Tensor] = None,
+        past_repetition_penalty_buffer: Optional[torch.Tensor] = None,
+        repetition_penalties: Optional[torch.Tensor] = None,
+        past_presence_penalty_buffer: Optional[torch.Tensor] = None,
+        presence_penalties: Optional[torch.Tensor] = None,
+        temperatures: Optional[torch.Tensor] = None,
+        top_ks: Optional[torch.Tensor] = None,
+        top_ps: Optional[torch.Tensor] = None,
+        min_ps: Optional[torch.Tensor] = None,
+        random_numbers: Optional[torch.Tensor] = None,
+        **kwargs,
+    ) -> Union[Tuple, CausalLMOutputWithPast]:
 
-        # if "input_ids" in kwargs and "inputs_embeds" in kwargs:
-        #     print("Warning: Both input_ids and inputs_embeds provided. Dropping inputs_embeds.")
-        #     kwargs.pop("inputs_embeds")
-
-        outputs = self.model(**kwargs)
-        # print("outputs", outputs.keys())
-        logits = self.model(**kwargs).get("logits")
+        outputs = self.model(
+            input_ids=input_ids,
+            attention_mask=attention_mask,
+            position_ids=position_ids,
+            past_key_values=past_key_values,
+            batch_index=batch_index,
+            inputs_embeds=inputs_embeds,
+            labels=labels,
+            use_cache=use_cache,
+            output_attentions=output_attentions,
+            output_hidden_states=output_hidden_states,
+            return_dict=return_dict,
+            cache_position=cache_position,
+            logits_to_keep=logits_to_keep,
+            **kwargs,
+        )
+        logits = outputs.get("logits")
         assert logits is not None, f"{self.model.__class__.__name__} does not return logits."
-        # print("Logits", logits.shape)
 
         # Sampling
-        sampler_outputs = sampler_forward(**kwargs)
+        sampler_outputs = sampler_forward(
+            input_ids=input_ids,
+            position_ids=position_ids,
+            batch_index=batch_index,
+            input_logits=logits,
+            last_accepted_output_tokens=last_accepted_output_tokens,
+            past_repetition_penalty_buffer=past_repetition_penalty_buffer,
+            repetition_penalties=repetition_penalties,
+            past_presence_penalty_buffer=past_presence_penalty_buffer,
+            presence_penalties=presence_penalties,
+            temperatures=temperatures,
+            top_ks=top_ks,
+            top_ps=top_ps,
+            min_ps=min_ps,
+            random_numbers=random_numbers,
+            return_pdfs=self.model.return_pdfs,
+        )
+
         return QEffCausalLMOutputWithPast(
-            loss=outputs.loss,
             probs=sampler_outputs.probs,
             next_tokens=sampler_outputs.next_tokens,
             past_key_values=outputs.past_key_values,
-            hidden_states=outputs.hidden_states,
-            attentions=outputs.attentions,
             past_repetition_penalty_buffer=sampler_outputs.past_repetition_penalty_buffer,
             past_presence_penalty_buffer=sampler_outputs.past_presence_penalty_buffer,
         )
@@ -127,7 +172,6 @@ def decode_path(
 
 
 def sampler_forward(
-    self,
     input_ids: torch.LongTensor = None,
     position_ids: Optional[torch.LongTensor] = None,
     batch_index: Optional[torch.LongTensor] = None,
@@ -142,6 +186,7 @@ def sampler_forward(
     top_ps: Optional[torch.Tensor] = None,
     min_ps: Optional[torch.Tensor] = None,
     random_numbers: Optional[torch.Tensor] = None,
+    return_pdfs: Optional[bool] = False,
     **kwargs,
 ) -> SamplerOutput:
     r"""
@@ -247,7 +292,7 @@ def sampler_forward(
 
     # Greedy Sampling
     greedy_samples = torch.argmax(logits, dim=1, keepdim=True)  # (batch_size * spec_length, 1)
-    if (temperatures == 0).all() and self.return_pdfs == False:
+    if (temperatures == 0).all() and return_pdfs == False:
         return SamplerOutput(
             probs=None,
             next_tokens=greedy_samples.reshape(-1, spec_length, 1),  # Return sampled next tokens instead of logits
@@ -303,7 +348,7 @@ def sampler_forward(
         topk_values_asc[min_p_mask] = torch.finfo(torch.float16).min
 
     probs = None
-    if self.return_pdfs:
+    if return_pdfs:
         # Update the logits
         logits.fill_(torch.finfo(torch.float16).min)
         logits = logits.scatter(1, topk_indices_asc, topk_values_asc)  # (batch_size * spec_length, vocab_size)
