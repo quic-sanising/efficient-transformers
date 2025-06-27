@@ -1,6 +1,6 @@
 # -----------------------------------------------------------------------------
 #
-# Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
+# Copyright (c) 2025 Qualcomm Innovation Center, Inc. All rights reserved.
 # SPDX-License-Identifier: BSD-3-Clause
 #
 # -----------------------------------------------------------------------------
@@ -346,6 +346,7 @@ class QEffLlamaForCausalLM(LlamaForCausalLM):
         return_dict: Optional[bool] = None,
         cache_position: Optional[torch.LongTensor] = None,
         logits_to_keep: Union[int, torch.Tensor] = 0,
+        last_chunk: Optional[torch.Tensor] = None,
         **kwargs,
     ) -> Union[Tuple, CausalLMOutputWithPast]:
         output_attentions = output_attentions if output_attentions is not None else self.config.output_attentions
@@ -376,6 +377,7 @@ class QEffLlamaForCausalLM(LlamaForCausalLM):
 
         logits = self.lm_head(hidden_states)
         logits = logits.float()
+        logits = torch.where(last_chunk == 1, logits, torch.zeros_like(logits))
 
         return CausalLMOutputWithPast(
             loss=None,
