@@ -1,6 +1,6 @@
 # -----------------------------------------------------------------------------
 #
-# Copyright (c) 2025 Qualcomm Innovation Center, Inc. All rights reserved.
+# Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
 # SPDX-License-Identifier: BSD-3-Clause
 #
 # -----------------------------------------------------------------------------
@@ -29,6 +29,7 @@ from QEfficient.transformers.models.llama.modeling_llama import (
     QEffLlamaRotaryEmbedding,
     qeff_apply_rotary_pos_emb,
 )
+from QEfficient.utils.constants import MIN_MASKED_ATTENTION_VALUE
 
 
 class QEffLlamaSwiftKVConfig(LlamaConfig):
@@ -120,7 +121,9 @@ class QEffLlamaSwiftKVAttention(nn.Module):
 
         attn_weights = torch.matmul(query_states, key_states.transpose(2, 3)) / math.sqrt(self.head_dim)
         if attention_mask is not None:  # no matter the length, we just slice it
-            attn_weights = torch.where(attention_mask, torch.tensor(-10000.0, dtype=torch.float32), attn_weights)
+            attn_weights = torch.where(
+                attention_mask, torch.tensor(MIN_MASKED_ATTENTION_VALUE, dtype=torch.float32), attn_weights
+            )
         # upcast attention to fp32
         attn_weights = nn.functional.softmax(attn_weights, dim=-1, dtype=torch.float32).to(query_states.dtype)
         # attn_weights = nn.functional.dropout(attn_weights, p=self.attention_dropout, training=self.training)
@@ -371,8 +374,8 @@ class QEffLlamaSwiftKVModel(nn.Module):
             hidden_states = orig_hidden_states[torch.arange(orig_hidden_states.shape[0]).reshape(-1, 1), last_pos_id, :]
             causal_mask = causal_mask[torch.arange(orig_hidden_states.shape[0]).reshape(-1, 1), :, last_pos_id, :]
         else:
-            hidden_states = orig_hidden_states[torch.arange(bsz), last_pos_id, :]
-            causal_mask = causal_mask[torch.arange(bsz), :, last_pos_id, :]
+            hidden_states = orig_hidden_states[torch.arange(bsz).reshape(-1, 1), last_pos_id, :]
+            causal_mask = causal_mask[torch.arange(bsz).reshape(-1, 1), :, last_pos_id, :]
 
         hidden_states, next_decoder_cache = self._run_swiftkv_layers(
             hidden_states, position_ids, past_key_values, causal_mask, batch_index

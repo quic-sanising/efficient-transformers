@@ -8,7 +8,7 @@
 
 | Architecture            | Model Family       | Representative Models                                                                 | CB Support |
 |-------------------------|--------------------|--------------------------------------------------------------------------------------|------------|
-| **FalconForCausalLM**   | Falcon             | [tiiuae/falcon-40b]((https://huggingface.co/tiiuae/falcon-40b))                                                                    | ✔️          |
+| **FalconForCausalLM**   | Falcon             | [tiiuae/falcon-40b](https://huggingface.co/tiiuae/falcon-40b)                                                                | ✔️          |
 | **GemmaForCausalLM**    | CodeGemma          | [google/codegemma-2b](https://huggingface.co/google/codegemma-2b)<br>[google/codegemma-7b](https://huggingface.co/google/codegemma-7b)                                           | ✔️          |
 |                         | Gemma              | [google/gemma-2b](https://huggingface.co/google/gemma-2b)<br>[google/gemma-7b](https://huggingface.co/google/gemma-7b)<br>[google/gemma-2-2b](https://huggingface.co/google/gemma-2-2b)<br>[google/gemma-2-9b](https://huggingface.co/google/gemma-2-9b)<br>[google/gemma-2-27b](https://huggingface.co/google/gemma-2-27b)        | ✔️          |
 | **GPTBigCodeForCausalLM** | Starcoder1.5      | [bigcode/starcoder](https://huggingface.co/bigcode/starcoder)                                                                   | ✔️          |
@@ -34,7 +34,7 @@
 | **QwenForCausalLM**     | DeepSeek-R1-Distill-Qwen | [DeepSeek-R1-Distill-Qwen-32B](https://huggingface.co/deepseek-ai/DeepSeek-R1-Distill-Qwen-32B)                                                   | ✔️          |
 |                         | Qwen2, Qwen2.5     | [Qwen/Qwen2-1.5B-Instruct](https://huggingface.co/Qwen/Qwen2-1.5B-Instruct)                                                            | ✔️          |
 | **LlamaSwiftKVForCausalLM**  | swiftkv            | [Snowflake/Llama-3.1-SwiftKV-8B-Instruct](https://huggingface.co/Snowflake/Llama-3.1-SwiftKV-8B-Instruct)                                                  | ✔️          |
-
+| **Grok1ModelForCausalLM**  |  grok-1          | [hpcai-tech/grok-1](https://huggingface.co/hpcai-tech/grok-1)                                                  | ✔️          |
 ## Embedding Models
 
 ### Text Embedding Task
@@ -57,11 +57,35 @@
 ### Vision-Language Models (Text + Image Generation)
 **QEff Auto Class:** `QEFFAutoModelForImageTextToText`
 
-| Architecture                | Model Family | Representative Models                  |
-|-----------------------------|--------------|----------------------------------------|
-| **LlavaForConditionalGeneration** | LLaVA-1.5   | [llava-hf/llava-1.5-7b-hf](https://huggingface.co/llava-hf/llava-1.5-7b-hf)               |
-| **MllamaForConditionalGeneration** | Llama 3.2   | [meta-llama/Llama-3.2-11B-Vision Instruct](https://huggingface.co/meta-llama/Llama-3.2-11B-Vision-Instruct)<br>[meta-llama/Llama-3.2-90B-Vision](https://huggingface.co/meta-llama/Llama-3.2-90B-Vision) |
-|**LlavaNextForConditionalGeneration** | Granite Vision | [ibm-granite/granite-vision-3.2-2b](https://huggingface.co/ibm-granite/granite-vision-3.2-2b)
+| Architecture                | Model Family | Representative Models                                                                 | CB Support | Single Qpc Support | Dual Qpc Support |
+|-----------------------------|--------------|----------------------------------------------------------------------------------------|------------|--------------------|------------------|
+| **LlavaForConditionalGeneration** | LLaVA-1.5   |  [llava-hf/llava-1.5-7b-hf](https://huggingface.co/llava-hf/llava-1.5-7b-hf)           |     ✕ |  ✔️                  | ✔️               |
+| **MllamaForConditionalGeneration** | Llama 3.2   | [meta-llama/Llama-3.2-11B-Vision Instruct](https://huggingface.co/meta-llama/Llama-3.2-11B-Vision-Instruct)<br>[meta-llama/Llama-3.2-90B-Vision](https://huggingface.co/meta-llama/Llama-3.2-90B-Vision) |     ✕      | ✔️          | ✔️          |
+|**LlavaNextForConditionalGeneration** | Granite Vision | [ibm-granite/granite-vision-3.2-2b](https://huggingface.co/ibm-granite/granite-vision-3.2-2b) | ✕ |      ✕     | ✔️          |
+|**Llama4ForConditionalGeneration** | Llama-4-Scout | [Llama-4-Scout-17B-16E-Instruct](https://huggingface.co/meta-llama/Llama-4-Scout-17B-16E-Instruct) |      ✕	      | ✔️          | ✔️          |
+|**Gemma3ForConditionalGeneration** | Gemma3 | [google/gemma-3-4b-it](https://huggingface.co/google/gemma-3-4b-it)|       ✕	     | ✔️          | ✔️          |
+
+
+**Dual QPC:**
+In the Dual QPC(Qualcomm Program Container) setup, the model is split across two  configurations:
+
+- The **Vision Encoder** runs in one QPC.
+- The **Language Model** (responsible for output generation) runs in a separate QPC.
+- The outputs from the Vision Encoder are transferred to the Language Model.
+- The dual QPC approach introduces the flexibility to run the vision and language components independently.
+
+
+
+**Single QPC:**
+In the single QPC(Qualcomm Program Container) setup, the entire model—including both image encoding and text generation—runs within a single QPC. There is no model splitting, and all components operate within the same execution environment.
+
+
+
+**Note:**
+The choice between Single and Dual QPC is determined during model instantiation using the `kv_offload` setting.
+If the `kv_offload` is set to `True` it runs in dual QPC and if its set to `False` model runs in single QPC mode.
+
+---
 ### Audio Models
 (Automatic Speech Recognition) - Transcription Task
 **QEff Auto Class:** `QEFFAutoModelForSpeechSeq2Seq`
@@ -75,6 +99,8 @@
 
 | Architecture            | Model Family | Representative Models                      |
 |-------------------------|--------------|--------------------------------------------|
+| **Qwen3MoeForCausalLM** |Qwen3| [Qwen/Qwen3-MoE-15B-A2B]() |
+| **Mistral3ForConditionalGeneration**|Mistral 3.1| [mistralai/Mistral-Small-3.1-24B-Base-2503](https://huggingface.co/mistralai/Mistral-Small-3.1-24B-Base-2503) |
 | **BaichuanForCausalLM** | Baichuan2    | [baichuan-inc/Baichuan2-7B-Base](https://huggingface.co/baichuan-inc/Baichuan2-7B-Base)             |
 | **CohereForCausalLM**   | Command-R    | [CohereForAI/c4ai-command-r-v01](https://huggingface.co/CohereForAI/c4ai-command-r-v01)             |
 | **DbrxForCausalLM**     | DBRX         | [databricks/dbrx-base](https://huggingface.co/databricks/dbrx-base)                       |

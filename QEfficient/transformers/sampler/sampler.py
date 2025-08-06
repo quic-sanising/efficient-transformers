@@ -1,16 +1,27 @@
+# -----------------------------------------------------------------------------
+#
+# Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
+# SPDX-License-Identifier: BSD-3-Clause
+#
+# ----------------------------------------------------------------------------
+
 from dataclasses import dataclass
+from typing import List, Optional, Tuple, Union
+
 import torch
-import torch.nn.functional as F
+from transformers.cache_utils import Cache
+from transformers.modeling_outputs import ModelOutput
 
 from QEfficient.customop import CtxScatterFuncCB3D
 from QEfficient.utils.constants import Constants
-from transformers.cache_utils import Cache
-from transformers.modeling_outputs import ModelOutput
-from typing import List, Optional, Tuple, Union
 
 
 @dataclass
 class SamplerOutput(ModelOutput):
+    """
+    Dataclass for the output of the On Device Sampler.
+    """
+
     probs: torch.FloatTensor = None
     next_tokens: torch.IntTensor = None
     past_key_values: Optional[Tuple[Tuple[torch.FloatTensor]]] = None
@@ -33,9 +44,7 @@ def prefill_path(
     mul_value = torch.ones(past_repetition_penalty_buffer.shape[0], 1, dtype=torch.bool)
     zero_tensor = torch.zeros(batch_index.shape, dtype=torch.long)
     positions_mask = (position_ids[:, :1] != zero_tensor).view(-1, 1)
-    mul_value = CtxScatterFuncCB3D.apply(
-        mul_value, batch_index, zero_tensor, positions_mask
-    )
+    mul_value = CtxScatterFuncCB3D.apply(mul_value, batch_index, zero_tensor, positions_mask)
     past_repetition_penalty_buffer *= mul_value
     past_presence_penalty_buffer *= mul_value
 
@@ -113,17 +122,10 @@ def sampler_forward(
     random_numbers: Optional[torch.Tensor] = None,
 ) -> Union[Tuple, SamplerOutput]:
     r"""
+    Perform the sampling of next tokens on the QAIC device (instead of the host)
+    and return the next tokens and/or probability distributions.
+
     Args:
-        labels (`torch.LongTensor` of shape `(batch_size, sequence_length)`, *optional*):
-            Labels for computing the masked language modeling loss. Indices should either be in `[0, ...,
-            config.vocab_size]` or -100 (see `input_ids` docstring). Tokens with indices set to `-100` are ignored
-            (masked), the loss is only computed for the tokens with labels in `[0, ..., config.vocab_size]`.
-
-        num_logits_to_keep (`int`, *optional*):
-            Calculate logits for the last `num_logits_to_keep` tokens. If `0`, calculate logits for all
-            `input_ids` (special case). Only last token logits are needed for generation, and calculating them only for that
-            token can save memory, which becomes pretty significant for long sequences or large vocabulary size.
-
         last_accepted_output_tokens (`torch.Tensor`, *optional*):
             Output tokens accepted by the Speculative Decoding Draft Language Model.
 
@@ -165,25 +167,7 @@ def sampler_forward(
         random_numbers (`torch.Tensor`, *optional*):
             Sampling parameter that represents the random seeds to use for random sampling.
             Must be in [-1, 1].
-
-    Returns:
-
-    Example:
-
-    ```python
-    >>> from transformers import AutoTokenizer, LlamaForCausalLM
-
-    >>> model = LlamaForCausalLM.from_pretrained("meta-llama/Llama-2-7b-hf")
-    >>> tokenizer = AutoTokenizer.from_pretrained("meta-llama/Llama-2-7b-hf")
-
-    >>> prompt = "Hey, are you conscious? Can you talk to me?"
-    >>> inputs = tokenizer(prompt, return_tensors="pt")
-
-    >>> # Generate
-    >>> generate_ids = model.generate(inputs.input_ids, max_length=30)
-    >>> tokenizer.batch_decode(generate_ids, skip_special_tokens=True, clean_up_tokenization_spaces=False)[0]
-    "Hey, are you conscious? Can you talk to me?\nI'm not conscious, but I can talk to you."
-    ```"""
+    """
 
     outputs = self.old_forward(
         input_ids=input_ids,
@@ -244,7 +228,7 @@ def sampler_forward(
 
     # Greedy Sampling
     greedy_samples = torch.argmax(logits, dim=1, keepdim=True)  # (batch_size * spec_length, 1)
-    if (temperatures == 0).all() and self.qaic_config.get("return_pdfs", False) == False:
+    if (temperatures == 0).all() and not self.qaic_config.get("return_pdfs", False):
         return SamplerOutput(
             probs=None,
             next_tokens=greedy_samples.reshape(-1, spec_length, 1),  # Return sampled next tokens instead of logits
@@ -255,16 +239,20 @@ def sampler_forward(
 
     # Repetition Penalty
     if (repetition_penalties != 1.0).any():
-        past_repetition_penalty_buffer_selected = \
-            past_repetition_penalty_buffer[batch_index_reshaped].repeat(spec_length, 1)  # (batch_size * spec_length, vocab_size)
+        past_repetition_penalty_buffer_selected = past_repetition_penalty_buffer[batch_index_reshaped].repeat(
+            spec_length, 1
+        )  # (batch_size * spec_length, vocab_size)
         repetition_penalties_mask = torch.where(past_repetition_penalty_buffer_selected, repetition_penalties, 1.0)
         logits *= repetition_penalties_mask ** (-torch.sign(logits))
 
     # Presence Penalty
     if (presence_penalties != 0.0).any():
-        presence_penalties = presence_penalties.repeat(spec_length, 1)  # (batch_size, 1) -> (batch_size * spec_length, 1)
-        past_presence_penalty_buffer_selected = \
-            past_presence_penalty_buffer[batch_index_reshaped].repeat(spec_length, 1)  # (batch_size * spec_length, vocab_size)
+        presence_penalties = presence_penalties.repeat(
+            spec_length, 1
+        )  # (batch_size, 1) -> (batch_size * spec_length, 1)
+        past_presence_penalty_buffer_selected = past_presence_penalty_buffer[batch_index_reshaped].repeat(
+            spec_length, 1
+        )  # (batch_size * spec_length, vocab_size)
         logits -= presence_penalties * past_presence_penalty_buffer_selected
 
     # TODO: Frequency Penalty
@@ -281,7 +269,9 @@ def sampler_forward(
     topk_indices_asc = topk_indices.flip(dims=[1])
     top_ks[top_ks > max_top_k_ids] = max_top_k_ids  # Clip k to max value
     # True values in this mask indicate the positions of the non-top K values
-    topk_mask = torch.arange(topk_values_asc.shape[1]).unsqueeze(0) < (topk_values_asc.size(1) - top_ks.to(torch.long)).repeat(spec_length, 1)  # (batch_size * spec_length, max_top_k_ids)
+    topk_mask = torch.arange(topk_values_asc.shape[1]).unsqueeze(0) < (
+        topk_values_asc.size(1) - top_ks.to(torch.long)
+    ).repeat(spec_length, 1)  # (batch_size * spec_length, max_top_k_ids)
     topk_values_asc[topk_mask] = torch.finfo(torch.float16).min
 
     # Top P
@@ -307,7 +297,9 @@ def sampler_forward(
         logits.fill_(torch.finfo(torch.float16).min)
         logits = logits.scatter(1, topk_indices_asc, topk_values_asc)  # (batch_size * spec_length, vocab_size)
         # Softmax
-        probs = torch.softmax(logits, dim=1).reshape(-1, spec_length, vocab_size)  # (batch_size, spec_length, vocab_size)
+        probs = torch.softmax(logits, dim=1).reshape(
+            -1, spec_length, vocab_size
+        )  # (batch_size, spec_length, vocab_size)
 
     # Random Sampling
     topk_probs_asc = torch.softmax(topk_values_asc, dim=1)  # (batch_size * spec_length, max_top_k_ids)
@@ -317,7 +309,9 @@ def sampler_forward(
     random_samples = torch.gather(topk_indices_asc, 1, random_samples_indices)  # (batch_size * spec_length, 1)
 
     # Sample the next tokens
-    next_tokens = torch.where(temperatures == 0, greedy_samples, random_samples).reshape(-1, spec_length, 1)  # (batch_size, spec_length, 1)
+    next_tokens = torch.where(temperatures == 0, greedy_samples, random_samples).reshape(
+        -1, spec_length, 1
+    )  # (batch_size, spec_length, 1)
 
     return SamplerOutput(
         probs=probs,

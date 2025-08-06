@@ -1,6 +1,6 @@
 # -----------------------------------------------------------------------------
 #
-# Copyright (c) 2024 Qualcomm Innovation Center, Inc. All rights reserved.
+# Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
 # SPDX-License-Identifier: BSD-3-Clause
 #
 # -----------------------------------------------------------------------------
@@ -10,6 +10,8 @@ import json
 import os
 
 import matplotlib.pyplot as plt
+
+from QEfficient.finetune.utils.logging_utils import logger
 
 
 def plot_metric(data, metric_name, x_label, y_label, title, colors):
@@ -67,14 +69,14 @@ def plot_metrics_by_step(data, metric_name, x_label, y_label, colors):
 
 def plot_metrics(file_path):
     if not os.path.exists(file_path):
-        print(f"File {file_path} does not exist.")
+        logger.raise_error(f"File {file_path} does not exist.", FileNotFoundError)
         return
 
     with open(file_path, "r") as f:
         try:
             data = json.load(f)
-        except json.JSONDecodeError:
-            print("Invalid JSON file.")
+        except json.JSONDecodeError as e:
+            logger.raise_error("Invalid JSON file.", e)
             return
 
     directory = os.path.dirname(file_path)

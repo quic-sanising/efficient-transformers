@@ -1,6 +1,6 @@
 # -----------------------------------------------------------------------------
 #
-# Copyright (c) 2024 Qualcomm Innovation Center, Inc. All rights reserved.
+# Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
 # SPDX-License-Identifier: BSD-3-Clause
 #
 # -----------------------------------------------------------------------------
@@ -11,7 +11,6 @@ from typing import Dict, Optional, Tuple, Type
 import torch
 import torch.nn as nn
 import transformers.models.auto.modeling_auto as mapping
-from transformers import AutoModelForCausalLM
 from transformers.models.codegen.modeling_codegen import (
     CodeGenAttention,
     CodeGenBlock,
@@ -89,13 +88,9 @@ from transformers.models.whisper.modeling_whisper import (
 )
 
 from QEfficient.customop import CustomRMSNormAIC
+from QEfficient.utils.constants import MIN_MASKED_ATTENTION_VALUE
 
 # Placeholder for all non-transformer models
-from QEfficient.transformers.models.llama_swiftkv.modeling_llama_swiftkv import (
-    QEffLlamaSwiftKVConfig,
-    QEffLlamaSwiftKVForCausalLM,
-)
-
 from .models.codegen.modeling_codegen import (
     QEffCodeGenAttention,
     QeffCodeGenBlock,
@@ -188,6 +183,8 @@ qeff_supported_architectures = ModelArchitectures(
     ]
 )
 
+DYNAMIC_SEQ_LEN_SUPPORTED_MODEL_ARCH = {"gemma3", "llama4", "gemma3_text", "llama4_text"}
+
 # Define a transformers layers to QEff layers dictionary
 # While onboarding new models make sure to add the new layer maps to this dictionary.
 TransformersToQEffModulesDict: Dict[Type[nn.Module], Type[nn.Module]] = {
@@ -279,18 +276,21 @@ TransformersToQEffModulesDict: Dict[Type[nn.Module], Type[nn.Module]] = {
     WhisperForConditionalGeneration: QEffWhisperForConditionalGeneration,
 }
 
-# Map of model type to config class, Modelling class and transformer model architecture class
-MODEL_TYPE_TO_CONFIG_CLS_AND_ARCH_CLS = {
-    "llama_swiftkv": [QEffLlamaSwiftKVConfig, QEffLlamaSwiftKVForCausalLM, AutoModelForCausalLM],
-}
 
+def build_model_class_mapping(auto_model_class, qeff_class_name):
+    """
+    Build a mapping of model config class names to QEfficient model class names.
+    """
+    return {
+        config_class.__name__: qeff_class_name for config_class, model_class in auto_model_class._model_mapping.items()
+    }
+
+
+EXTERNAL_MODEL_CLASS_MAPPING = {"Grok1Config": "QEFFAutoModelForCausalLM"}
 
 MODEL_CLASS_MAPPING = {
-    **{architecture: "QEFFAutoModelForCausalLM" for architecture in mapping.MODEL_FOR_CAUSAL_LM_MAPPING_NAMES.values()},
-    **{
-        architecture: "QEFFAutoModelForImageTextToText"
-        for architecture in mapping.MODEL_FOR_IMAGE_TEXT_TO_TEXT_MAPPING_NAMES.values()
-    },
+    **build_model_class_mapping(mapping.AutoModelForCausalLM, "QEFFAutoModelForCausalLM"),
+    **build_model_class_mapping(mapping.AutoModelForImageTextToText, "QEFFAutoModelForImageTextToText"),
 }
 
 
@@ -308,12 +308,12 @@ def _prepare_cross_attention_mask(
     # invert the mask
     inverted_cross_attn_mask = (1.0 - cross_attention_mask).to(dtype)
     cross_attention_mask = inverted_cross_attn_mask.masked_fill(
-        inverted_cross_attn_mask.to(torch.bool), torch.tensor(-10000.0, dtype=torch.float32)
+        inverted_cross_attn_mask.to(torch.bool), torch.tensor(MIN_MASKED_ATTENTION_VALUE, dtype=torch.float32)
     )
 
     # apply full-row bias, which return 4D tensor of shape [B, H, S1, 1] where value is 0 if the a full row in cross attn mask's
     # last dimension contains negative infinity values, otherwise it's 1
-    negative_inf_value = torch.tensor(-10000.0, dtype=torch.float32)
+    negative_inf_value = torch.tensor(MIN_MASKED_ATTENTION_VALUE, dtype=torch.float32)
     full_text_row_masked_out_mask = (
         (cross_attention_mask != negative_inf_value).any(dim=-1).type_as(cross_attention_mask)[..., None]
     )
@@ -343,7 +343,11 @@ def _prepare_aspect_ratio_attention_mask(
     # Reshape to 2D and create 4D attention mask
     # (batch_size, 1, max_num_tiles * target_length, max_num_tiles * target_length)
     attention_mask = attention_mask.reshape(batch_size, max_num_tiles * target_length, 1)
-    attention_mask = attention_mask @ attention_mask.transpose(-1, -2) * torch.tensor(-10000.0, dtype=torch.float32)
+    attention_mask = (
+        attention_mask
+        @ attention_mask.transpose(-1, -2)
+        * torch.tensor(MIN_MASKED_ATTENTION_VALUE, dtype=torch.float32)
+    )
     attention_mask = attention_mask.unsqueeze(1)
 
     return attention_mask

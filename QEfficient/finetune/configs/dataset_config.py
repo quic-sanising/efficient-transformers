@@ -1,18 +1,11 @@
 # -----------------------------------------------------------------------------
 #
-# Copyright (c) 2024 Qualcomm Innovation Center, Inc. All rights reserved.
+# Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
 # SPDX-License-Identifier: BSD-3-Clause
 #
 # -----------------------------------------------------------------------------
 
 from dataclasses import dataclass
-
-
-@dataclass
-class samsum_dataset:
-    dataset: str = "samsum_dataset"
-    train_split: str = "train"
-    test_split: str = "validation"
 
 
 @dataclass

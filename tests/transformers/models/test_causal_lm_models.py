@@ -1,6 +1,6 @@
 # -----------------------------------------------------------------------------
 #
-# Copyright (c) 2024 Qualcomm Innovation Center, Inc. All rights reserved.
+# Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
 # SPDX-License-Identifier: BSD-3-Clause
 #
 # -----------------------------------------------------------------------------
@@ -10,6 +10,7 @@ from typing import Optional
 
 import numpy as np
 import pytest
+import torch
 from transformers import AutoModelForCausalLM
 
 from QEfficient.exporter.export_hf_to_cloud_ai_100 import qualcomm_efficient_converter
@@ -21,6 +22,7 @@ from QEfficient.utils.constants import Constants, QnnConstants
 from QEfficient.utils.device_utils import get_available_device_id
 from QEfficient.utils.run_utils import ApiRunner
 
+extrenal_models = {"hpcai-tech/grok-1"}
 test_models_qaic = [
     "TinyLlama/TinyLlama-1.1B-Chat-v1.0",
     "gpt2",
@@ -44,6 +46,7 @@ test_models_qaic = [
     "neuralmagic/Qwen2-0.5B-Instruct-FP8",  # fp8 quant method, static, with lm head ignored
     "ibm-granite/granite-3.1-2b-instruct",
     "ibm-granite/granite-guardian-3.1-2b",
+    "hpcai-tech/grok-1",
 ]
 
 test_models_qnn = [
@@ -78,7 +81,12 @@ def load_causal_lm_model(model_config):
         num_hidden_layers=model_config["n_layer"],
         attn_implementation="eager",
         low_cpu_mem_usage=False,
-    )  # Run models for single layers only
+        trust_remote_code=model_config["model_name"] in extrenal_models,
+    )
+    # Convert to FP32 if model is in BF16
+    if getattr(model_hf.config, "torch_dtype", None) == torch.bfloat16:
+        model_hf = model_hf.to(torch.float32)
+
     params = sum(p.numel() for p in model_hf.parameters())
     model_hf.eval()
     return model_hf, params
@@ -123,7 +131,7 @@ def check_causal_lm_pytorch_vs_kv_vs_ort_vs_ai100(
     pytorch_hf_tokens = api_runner.run_hf_model_on_pytorch(model_hf)
 
     is_tlm = False if num_speculative_tokens is None else True
-    qeff_model = QEFFAutoModelForCausalLM(model_hf, is_tlm=is_tlm)
+    qeff_model = QEFFAutoModelForCausalLM(model_hf, is_tlm=is_tlm, pretrained_model_name_or_path=model_name)
 
     pytorch_kv_tokens = api_runner.run_kv_model_on_pytorch(qeff_model.model)
 
@@ -183,7 +191,9 @@ def check_causal_lm_pytorch_vs_kv_vs_ort_vs_ai100(
     pytorch_hf_tokens = api_runner.run_hf_model_on_pytorch_CB(model_hf)
     pytorch_hf_tokens = np.vstack(pytorch_hf_tokens)
 
-    qeff_model = QEFFAutoModelForCausalLM(model_hf, continuous_batching=True, is_tlm=is_tlm)
+    qeff_model = QEFFAutoModelForCausalLM(
+        model_hf, continuous_batching=True, is_tlm=is_tlm, pretrained_model_name_or_path=model_name
+    )
     onnx_model_path = qeff_model.export()
 
     if not get_available_device_id():
@@ -219,7 +229,7 @@ def test_causal_lm_export_with_deprecated_api(model_name):
     model_config["n_layer"] = 1
     model, _ = load_causal_lm_model(model_config)
     tokenizer = load_hf_tokenizer(pretrained_model_name_or_path=model_name)
-    qeff_model = QEFFAutoModelForCausalLM(model)
+    qeff_model = QEFFAutoModelForCausalLM(model, model_name=model_name, pretrained_model_name_or_path=model_name)
     new_api_onnx_model_path = qeff_model.export()
     _, old_api_onnx_model_path = qualcomm_efficient_converter(
         model_name=model_name, model_kv=qeff_model, tokenizer=tokenizer
@@ -250,7 +260,7 @@ def test_causal_lm_pytorch_vs_kv_vs_ort_vs_ai100(model_name):
     ``Mandatory`` Args:
         :model_name (str): Hugging Face Model Card name, Example: ``gpt2``
     """
-    if model_name == "microsoft/Phi-3-mini-4k-instruct":
+    if model_name in {"microsoft/Phi-3-mini-4k-instruct", "neuralmagic/Qwen2-0.5B-Instruct-FP8"}:
         n_layer = 2  # test only 2 layer models
     else:
         n_layer = 1

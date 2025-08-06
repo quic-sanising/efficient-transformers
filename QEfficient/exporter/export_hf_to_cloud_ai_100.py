@@ -1,6 +1,6 @@
 # -----------------------------------------------------------------------------
 #
-# Copyright (c) 2024 Qualcomm Innovation Center, Inc. All rights reserved.
+# Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
 # SPDX-License-Identifier: BSD-3-Clause
 #
 # -----------------------------------------------------------------------------
@@ -129,7 +129,6 @@ def export_bertstyle_model_to_onnx(model_name, model, tokenizer, onnx_dir_path, 
     )
 
     # Generate inputFiles
-    # todo(ochougul):rename to bert_style_input_list.txt
     input_list_file = os.path.join(onnx_dir_path, "input_list.txt")
     generate_input_files(
         input_files_path=os.path.join(onnx_dir_path, "inputFiles"),
