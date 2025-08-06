@@ -9,7 +9,7 @@ seed=1
 parent_directory="/local/mnt/workspace/sanising/quic-github/efficient-transformers/"
 num_cores=16
 
-batch_sizes=(1 2 8)
+batch_sizes=(1 2 8 16)
 ctx_lengths=(256 512)
 tensor_slices=(1 2 4 8)
 

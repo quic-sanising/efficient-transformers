@@ -7,7 +7,7 @@
 # ctx_lengths=(128 512 4096 8192)
 sequence_lengths=(128)
 batch_sizes=(4)
-vocab_sizes=(128256)
+vocab_sizes=(1024)
 ctx_lengths=(256)
 
 # Ensure the output directory exists
@@ -19,7 +19,7 @@ success_count=0
 total_count=0
 
 # CPU vs QAIC
-output_file="$output_dir/test_qaic_sampler_penalties__test_cpu_vs_qaic.log"
+output_file="$output_dir/test_qaic_sampler_penalties__test_cpu_vs_qaic3.log"
 rm $output_file
 
 for sequence_length in "${sequence_lengths[@]}"; do
@@ -41,15 +41,15 @@ done
 
 echo "No. of tests passed: ($success_count/$total_count)" 2>&1 | tee -a $output_file
 
-# Generate opstats
-rm -r ./outputs_from_qpcs/
-mkdir -p "./outputs_from_qpcs/"
-api_test_cmd="/opt/qti-aic/exec/qaic-api-test -t ./on_device_sampling_qpcs/ -n 10 --aic-profiling-type raw_device_stats --aic-profiling-start-iter 5 --aic-profiling-num-samples 1 --aic-batch-json-input ${output_dir}/aic_batch_io.json --write-output-dir ./outputs_from_qpcs/ -d 11 --aic-profiling-out-dir ./outputs_from_qpcs/"
-echo $api_test_cmd
-$api_test_cmd 2>&1 | tee -a $output_file
+# # Generate opstats
+# rm -r ./outputs_from_qpcs/
+# mkdir -p "./outputs_from_qpcs/"
+# api_test_cmd="/opt/qti-aic/exec/qaic-api-test -t ./on_device_sampling_qpcs/ -n 10 --aic-profiling-type raw_device_stats --aic-profiling-start-iter 5 --aic-profiling-num-samples 1 --aic-batch-json-input ${output_dir}/aic_batch_io.json --write-output-dir ./outputs_from_qpcs/ -d 11 --aic-profiling-out-dir ./outputs_from_qpcs/"
+# echo $api_test_cmd
+# $api_test_cmd 2>&1 | tee -a $output_file
 
-rm -r ./opstats/
-mkdir -p "./opstats/"
-opstats_cmd="/opt/qti-aic/exec/qaic-opstats --qpc ./on_device_sampling_qpcs/programqpc.bin --input-dir ./outputs_from_qpcs/ --output-dir ./opstats/ --summary --trace" 
-echo $opstats_cmd
-$opstats_cmd 2>&1 | tee -a $output_file
+# rm -r ./opstats/
+# mkdir -p "./opstats/"
+# opstats_cmd="/opt/qti-aic/exec/qaic-opstats --qpc ./on_device_sampling_qpcs/programqpc.bin --input-dir ./outputs_from_qpcs/ --output-dir ./opstats/ --summary --trace" 
+# echo $opstats_cmd
+# $opstats_cmd 2>&1 | tee -a $output_file

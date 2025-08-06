@@ -5,66 +5,85 @@ import torch.nn.functional as F
 from QEfficient.customop import CtxScatterFuncCB3D
 from QEfficient.utils.constants import Constants
 from transformers.cache_utils import Cache
-from transformers.modeling_outputs import CausalLMOutputWithPast, ModelOutput
+from transformers.modeling_outputs import ModelOutput
 from typing import List, Optional, Tuple, Union
 
 
 @dataclass
-class QEffCausalLMOutputWithPast(ModelOutput):
-    loss: Optional[torch.FloatTensor] = None
+class SamplerOutput(ModelOutput):
     probs: torch.FloatTensor = None
     next_tokens: torch.IntTensor = None
     past_key_values: Optional[Tuple[Tuple[torch.FloatTensor]]] = None
-    hidden_states: Optional[Tuple[torch.FloatTensor, ...]] = None
-    attentions: Optional[Tuple[torch.FloatTensor, ...]] = None
     past_repetition_penalty_buffer: Optional[torch.Tensor] = None
     past_presence_penalty_buffer: Optional[torch.Tensor] = None
 
 
-def filter_hidden_states(
-    hidden_states: torch.Tensor,
-    position_ids: torch.Tensor,
-    num_logits_to_keep: Optional[int] = None,
-) -> torch.Tensor:
+def prefill_path(
+    input_ids: torch.LongTensor,
+    position_ids: torch.LongTensor,
+    batch_index: torch.LongTensor,
+    batch_index_reshaped: torch.LongTensor,
+    past_repetition_penalty_buffer: torch.Tensor,
+    past_presence_penalty_buffer: torch.Tensor,
+) -> Tuple[torch.Tensor, torch.Tensor]:
     """
-    Filter hidden states based on whether this is a TLM SpD model
-
-    ``Mandatory`` Args:
-        :hidden_states (torch.Tensor): Hidden states tensor.
-        :position_ids (torch.Tensor): Position ids tensor.
-    ``Optional`` Args:
-        :num_logits_to_keep (int, optional): Number of speculative tokens, specified only for TLM SpD model
-
-    Returns:
-        :torch.Tensor: Filtered hidden states.
+    Initialize or update RetainedState buffers for prefill stage based on `input_ids`.
     """
-    batch_size = position_ids.size(0)
-    batch_indices = torch.arange(batch_size)
-    # Cast to INT32 to avoid issue while running in ONNXRT
-    logit_index = position_ids.to(torch.int32).argmax(1, keepdim=True)
+    # Initialize retain states for first input chunk
+    mul_value = torch.ones(past_repetition_penalty_buffer.shape[0], 1, dtype=torch.bool)
+    zero_tensor = torch.zeros(batch_index.shape, dtype=torch.long)
+    positions_mask = (position_ids[:, :1] != zero_tensor).view(-1, 1)
+    mul_value = CtxScatterFuncCB3D.apply(
+        mul_value, batch_index, zero_tensor, positions_mask
+    )
+    past_repetition_penalty_buffer *= mul_value
+    past_presence_penalty_buffer *= mul_value
 
-    if num_logits_to_keep is None:
-        # return the last logit
-        return hidden_states[batch_indices.view(-1, 1), logit_index]
+    # Mask out-of-bounds or invalid position_ids or input_ids
+    input_ids = torch.where(position_ids == -1, torch.iinfo(torch.int32).max, input_ids)
 
-    # gather approach
-    num_logits_to_keep = num_logits_to_keep.shape[0]
-    lower_idx = torch.where(
-        logit_index < num_logits_to_keep,
-        0,
-        logit_index + 1 - num_logits_to_keep,
-    ).view(
-        -1, 1
-    )  # shape: [bsz, 1]
-    spec_idx = torch.arange(num_logits_to_keep).view(1, -1)  # shape: [1, k]
-    indices = torch.add(lower_idx, spec_idx).unsqueeze(2)  # shape: [bsz, k, 1]
-    indices = indices.repeat(
-        1, 1, hidden_states.size(-1)
-    )  # shape: [bsz, ,k, d_model]
-    hidden_states = torch.gather(
-        hidden_states, dim=1, index=indices
-    )  # shape: [bsz, k, d_model]
-    return hidden_states
+    # Update retain states for chunked input
+    past_repetition_penalty_buffer = CtxScatterFuncCB3D.apply(
+        past_repetition_penalty_buffer,
+        batch_index,
+        input_ids,
+        torch.ones(input_ids.shape, dtype=torch.bool),
+    )
+    return past_repetition_penalty_buffer, past_presence_penalty_buffer
+
+
+def decode_path(
+    last_accepted_output_tokens: torch.LongTensor,
+    position_ids: torch.LongTensor,
+    batch_index: torch.LongTensor,
+    batch_index_reshaped: torch.LongTensor,
+    past_repetition_penalty_buffer: torch.Tensor,
+    past_presence_penalty_buffer: torch.Tensor,
+) -> Tuple[torch.Tensor, torch.Tensor]:
+    """
+    Update RetainedState buffers for decode stage based on `last_accepted_output_tokens`.
+    """
+    # Mask out-of-bounds or invalid position_ids or last_accepted_output_tokens
+    last_accepted_output_tokens = torch.where(
+        position_ids == -1, torch.iinfo(torch.int32).max, last_accepted_output_tokens
+    )
+
+    # Update retained states
+    scatter_values = torch.ones(last_accepted_output_tokens.shape, dtype=torch.bool)
+    past_repetition_penalty_buffer = CtxScatterFuncCB3D.apply(
+        past_repetition_penalty_buffer,
+        batch_index,
+        last_accepted_output_tokens,
+        scatter_values,
+    )
+    past_presence_penalty_buffer = CtxScatterFuncCB3D.apply(
+        past_presence_penalty_buffer,
+        batch_index,
+        last_accepted_output_tokens,
+        scatter_values,
+    )
+    # TODO: For frequency retain state, first gather and then scatter
+    return past_repetition_penalty_buffer, past_presence_penalty_buffer
 
 
 def sampler_forward(
@@ -92,7 +111,7 @@ def sampler_forward(
     top_ps: Optional[torch.Tensor] = None,
     min_ps: Optional[torch.Tensor] = None,
     random_numbers: Optional[torch.Tensor] = None,
-) -> Union[Tuple, CausalLMOutputWithPast]:
+) -> Union[Tuple, SamplerOutput]:
     r"""
     Args:
         labels (`torch.LongTensor` of shape `(batch_size, sequence_length)`, *optional*):
@@ -166,22 +185,7 @@ def sampler_forward(
     "Hey, are you conscious? Can you talk to me?\nI'm not conscious, but I can talk to you."
     ```"""
 
-    output_attentions = (
-        output_attentions
-        if output_attentions is not None
-        else self.config.output_attentions
-    )
-    output_hidden_states = (
-        output_hidden_states
-        if output_hidden_states is not None
-        else self.config.output_hidden_states
-    )
-    return_dict = (
-        return_dict if return_dict is not None else self.config.use_return_dict
-    )
-
-    # decoder outputs consists of (dec_features, layer_state, dec_hidden, dec_attn)
-    outputs = self.model(
+    outputs = self.old_forward(
         input_ids=input_ids,
         attention_mask=attention_mask,
         position_ids=position_ids,
@@ -195,79 +199,56 @@ def sampler_forward(
         cache_position=cache_position,
     )
 
-    hidden_states = filter_hidden_states(
-        outputs[0], position_ids, num_logits_to_keep
-    )
-    if self.config.pretraining_tp > 1:
-        lm_head_slices = self.lm_head.weight.split(
-            self.vocab_size // self.config.pretraining_tp, dim=0
-        )
-        logits = [
-            F.linear(hidden_states, lm_head_slices[i])
-            for i in range(self.config.pretraining_tp)
-        ]
-        logits = torch.cat(logits, dim=-1)
-    else:
-        logits = self.lm_head(hidden_states)
+    logits = outputs.get("logits", None)
+    assert logits is not None, f"{self.model.__class__.__name__} does not return logits."
     logits = logits.float()  # (batch_size, num_logits_to_keep aka spec_length, vocab_size)
 
     # Perform Sampling
     batch_size, spec_length, vocab_size = logits.shape
     logits = logits.reshape(-1, vocab_size)  # Reshape tensor to 2D
-    # FIXME: Create 3D retain states
+
+    if batch_index is None:
+        batch_index = torch.arange(batch_size).view(-1, 1)
+
+    print("-"*10)
+    print(batch_index, batch_index.shape)
+    print("-"*10)
 
     batch_index_reshaped = batch_index.view(-1)
-    # --- Prefill ---
-    if input_ids.shape[1] > spec_length:
-        if (position_ids[:, 0] == 0).any():
-            # First input chunk, so initialize retain states
-            mul_value = torch.ones(past_repetition_penalty_buffer.shape[0], 1, dtype=torch.bool)
-            mul_value[batch_index_reshaped] = position_ids[:, :1] != 0
-            past_repetition_penalty_buffer *= mul_value
-            past_presence_penalty_buffer *= mul_value
-
-        # Mask out-of-bounds or invalid position_ids or input_ids
-        input_ids = torch.where(position_ids == -1, torch.iinfo(torch.int32).max, input_ids)
-
-        # Chunked input, so update retain states
-        past_repetition_penalty_buffer = CtxScatterFuncCB3D.apply(
-            past_repetition_penalty_buffer,
-            batch_index,
-            input_ids,
-            torch.ones(input_ids.shape, dtype=torch.bool),
-        )
-
-    # --- Decode ---
-    else:
-        # Mask out-of-bounds or invalid position_ids or last_accepted_output_tokens
-        last_accepted_output_tokens = torch.where(position_ids == -1, torch.iinfo(torch.int32).max, last_accepted_output_tokens)
-
-        # Update retained states
-        scatter_values = torch.ones(last_accepted_output_tokens.shape, dtype=torch.bool)
-        past_repetition_penalty_buffer = CtxScatterFuncCB3D.apply(
-            past_repetition_penalty_buffer,
-            batch_index,
-            last_accepted_output_tokens,
-            scatter_values,
-        )
-        past_presence_penalty_buffer = CtxScatterFuncCB3D.apply(
-            past_presence_penalty_buffer,
-            batch_index,
-            last_accepted_output_tokens,
-            scatter_values,
-        )
-        # TODO: For frequency retain state, first gather and then scatter
+    # Prefill
+    past_repetition_penalty_buffer_prefill, past_presence_penalty_buffer_prefill = prefill_path(
+        input_ids=input_ids,
+        position_ids=position_ids,
+        batch_index=batch_index,
+        batch_index_reshaped=batch_index_reshaped,
+        past_repetition_penalty_buffer=past_repetition_penalty_buffer.clone(),
+        past_presence_penalty_buffer=past_presence_penalty_buffer.clone(),
+    )
+    # Decode
+    past_repetition_penalty_buffer_decode, past_presence_penalty_buffer_decode = decode_path(
+        last_accepted_output_tokens=last_accepted_output_tokens,
+        position_ids=position_ids,
+        batch_index=batch_index,
+        batch_index_reshaped=batch_index_reshaped,
+        past_repetition_penalty_buffer=past_repetition_penalty_buffer.clone(),
+        past_presence_penalty_buffer=past_presence_penalty_buffer.clone(),
+    )
+    # Select the correct repetition and presence penalty buffers
+    is_prefill = torch.ones(past_repetition_penalty_buffer.shape, dtype=torch.bool) * (input_ids.shape[1] > spec_length)
+    past_repetition_penalty_buffer = torch.where(
+        is_prefill, past_repetition_penalty_buffer_prefill, past_repetition_penalty_buffer_decode
+    )
+    past_presence_penalty_buffer = torch.where(
+        is_prefill, past_presence_penalty_buffer_prefill, past_presence_penalty_buffer_decode
+    )
 
     # Greedy Sampling
     greedy_samples = torch.argmax(logits, dim=1, keepdim=True)  # (batch_size * spec_length, 1)
-    if (temperatures == 0).all() and self.return_pdfs == False:
-        return QEffCausalLMOutputWithPast(
-            loss=None,
+    if (temperatures == 0).all() and self.qaic_config.get("return_pdfs", False) == False:
+        return SamplerOutput(
             probs=None,
             next_tokens=greedy_samples.reshape(-1, spec_length, 1),  # Return sampled next tokens instead of logits
             past_key_values=outputs.past_key_values,
-            hidden_states=outputs.hidden_states,
-            attentions=outputs.attentions,
             past_repetition_penalty_buffer=past_repetition_penalty_buffer,
             past_presence_penalty_buffer=past_presence_penalty_buffer,
         )
@@ -290,37 +271,38 @@ def sampler_forward(
 
     # Temperature Scaling
     temperatures = temperatures.repeat(spec_length, 1)  # (batch_size, 1) -> (batch_size * spec_length, 1)
-    logits /= temperatures
+    logits = torch.where(temperatures != 0, logits / temperatures, logits)
 
     # Top K
-    # TODO (Optimization): if (top_ks != -1 or top_ks != Constants.MAX_TOP_K_IDS).any() is False: skip but will need topk_values_asc and topk_indices_asc
-    topk_values, topk_indices = torch.topk(logits, k=Constants.MAX_TOP_K_IDS, dim=1)  # (batch_size * spec_length, vocab_size)
+    # TODO (Optimization): if (top_ks != -1 or top_ks != max_top_k_ids).any() is False: skip but will need topk_values_asc and topk_indices_asc
+    max_top_k_ids = self.qaic_config.get("max_top_k_ids", Constants.MAX_TOP_K_IDS)
+    topk_values, topk_indices = torch.topk(logits, k=max_top_k_ids, dim=1)  # (batch_size * spec_length, vocab_size)
     topk_values_asc = topk_values.flip(dims=[1])
     topk_indices_asc = topk_indices.flip(dims=[1])
-    top_ks[top_ks > Constants.MAX_TOP_K_IDS] = Constants.MAX_TOP_K_IDS  # Clip k to max value
+    top_ks[top_ks > max_top_k_ids] = max_top_k_ids  # Clip k to max value
     # True values in this mask indicate the positions of the non-top K values
-    topk_mask = torch.arange(topk_values_asc.shape[1]).unsqueeze(0) < (topk_values_asc.size(1) - top_ks.to(torch.long)).repeat(spec_length, 1)  # (batch_size * spec_length, Constants.MAX_TOP_K_IDS)
+    topk_mask = torch.arange(topk_values_asc.shape[1]).unsqueeze(0) < (topk_values_asc.size(1) - top_ks.to(torch.long)).repeat(spec_length, 1)  # (batch_size * spec_length, max_top_k_ids)
     topk_values_asc[topk_mask] = torch.finfo(torch.float16).min
 
     # Top P
     # TODO (Optimization): if (top_ps != 1.).any() is False: skip but will need top_probs for Min P
-    top_probs = torch.softmax(topk_values_asc, dim=1)  # (batch_size * spec_length, Constants.MAX_TOP_K_IDS)
+    top_probs = torch.softmax(topk_values_asc, dim=1)  # (batch_size * spec_length, max_top_k_ids)
     topk_probs_sum = torch.cumsum(top_probs, dim=1)
-    top_p_mask = topk_probs_sum <= 1 - top_ps.repeat(spec_length, 1)  # (batch_size * spec_length, Constants.MAX_TOP_K_IDS)
-    top_p_mask[:, Constants.MAX_TOP_K_IDS - 1] = False
+    top_p_mask = topk_probs_sum <= 1 - top_ps.repeat(spec_length, 1)  # (batch_size * spec_length, max_top_k_ids)
+    top_p_mask[:, max_top_k_ids - 1] = False
     topk_values_asc[top_p_mask] = torch.finfo(torch.float16).min
 
     # Min P
     if (min_ps != 0.0).any():
         scaled_min_p = torch.mul(
             min_ps.repeat(spec_length, 1),
-            top_probs[:, Constants.MAX_TOP_K_IDS - 1 :],
+            top_probs[:, max_top_k_ids - 1 :],
         )  # (batch_size * spec_length, 1)
-        min_p_mask = top_probs < scaled_min_p  # (batch_size * spec_length, Constants.MAX_TOP_K_IDS)
+        min_p_mask = top_probs < scaled_min_p  # (batch_size * spec_length, max_top_k_ids)
         topk_values_asc[min_p_mask] = torch.finfo(torch.float16).min
 
     probs = None
-    if self.return_pdfs:
+    if self.qaic_config.get("return_pdfs", False):
         # Update the logits
         logits.fill_(torch.finfo(torch.float16).min)
         logits = logits.scatter(1, topk_indices_asc, topk_values_asc)  # (batch_size * spec_length, vocab_size)
@@ -328,7 +310,7 @@ def sampler_forward(
         probs = torch.softmax(logits, dim=1).reshape(-1, spec_length, vocab_size)  # (batch_size, spec_length, vocab_size)
 
     # Random Sampling
-    topk_probs_asc = torch.softmax(topk_values_asc, dim=1)  # (batch_size * spec_length, Constants.MAX_TOP_K_IDS)
+    topk_probs_asc = torch.softmax(topk_values_asc, dim=1)  # (batch_size * spec_length, max_top_k_ids)
     gumbel_noise = -torch.log(-torch.log(random_numbers.repeat(spec_length, 1)))  # Gumbel-Max Trick
     y = topk_probs_asc + gumbel_noise
     random_samples_indices = torch.argmax(y, dim=1, keepdim=True)
@@ -337,13 +319,10 @@ def sampler_forward(
     # Sample the next tokens
     next_tokens = torch.where(temperatures == 0, greedy_samples, random_samples).reshape(-1, spec_length, 1)  # (batch_size, spec_length, 1)
 
-    return QEffCausalLMOutputWithPast(
-        loss=None,
+    return SamplerOutput(
         probs=probs,
         next_tokens=next_tokens,  # Return sampled next tokens instead of logits
         past_key_values=outputs.past_key_values,
-        hidden_states=outputs.hidden_states,
-        attentions=outputs.attentions,
         past_repetition_penalty_buffer=past_repetition_penalty_buffer,
         past_presence_penalty_buffer=past_presence_penalty_buffer,
     )

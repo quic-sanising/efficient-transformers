@@ -10,7 +10,7 @@ from QEfficient.transformers.sampler.test_sampler.make_inputs import write_io_fi
 def initialize_model(model_name, qaic_config):
     qeff_model = AutoModelForCausalLM.from_pretrained(
         model_name,
-        # num_hidden_layers=2,
+        num_hidden_layers=2,
         continuous_batching=True,
         qaic_config=qaic_config,
     )
@@ -37,12 +37,13 @@ def compile_model(
     #         num_cores=num_cores,
     #         num_speculative_tokens=spec_length - 1,
     #         # device_id=device_id,
-    #     )        
-    # else:    
+    #     )
+    # else:
     generated_qpc_path = qeff_model.compile(
         compile_dir=compile_directory,
         prefill_seq_len=sequence_length,
         ctx_len=ctx_length,
+        # batch_size=batch_size,
         full_batch_size=batch_size,
         num_devices=num_devices,
         num_cores=num_cores,
@@ -228,5 +229,5 @@ if __name__ == "__main__":
     main()
 
 """
-python3 /local/mnt/workspace/sanising/quic-github/efficient-transformers/run_sampler_copy2.py --model_name meta-llama/Llama-3.1-8B --include_sampler --no_is_tlm --no_return_pdfs --sequence_length 128 --k 512 --spec_length 1 --seed 1 --parent_directory /local/mnt/workspace/sanising/quic-github/efficient-transformers --num_devices 1 --num_cores 16 --kv-cache-dtype mxint8 --quantization mxfp6 --batch_size 2 --ctx_length 256
+python3 /local/mnt/workspace/sanising/quic-github/efficient-transformers/run_sampler_copy2.py --model_name meta-llama/Llama-3.1-8B --include_sampler --no_is_tlm --return_pdfs --sequence_length 128 --k 512 --spec_length 1 --seed 1 --parent_directory /local/mnt/workspace/sanising/quic-github/efficient-transformers --num_devices 1 --num_cores 16 --kv-cache-dtype mxint8 --quantization mxfp6 --batch_size 2 --ctx_length 256
 """

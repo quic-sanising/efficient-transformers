@@ -1,6 +1,6 @@
 # -----------------------------------------------------------------------------
 #
-# Copyright (c) 2025 Qualcomm Innovation Center, Inc. All rights reserved.
+# Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
 # SPDX-License-Identifier: BSD-3-Clause
 #
 # -----------------------------------------------------------------------------
@@ -56,16 +56,19 @@ def get_models_dir():
 
 QEFF_MODELS_DIR = get_models_dir()
 
-ONNX_EXPORT_EXAMPLE_BATCH_SIZE = 2
+ONNX_EXPORT_EXAMPLE_BATCH_SIZE = 1
 ONNX_EXPORT_EXAMPLE_SEQ_LEN = 32
 ONNX_EXPORT_EXAMPLE_FBS = 4
 ONNX_EXPORT_EXAMPLE_NLK = 2  # Number of Logits to Keep
+ONNX_EXPORT_EXAMPLE_REPETITION_PENALTIES = 0.5
+ONNX_EXPORT_EXAMPLE_PRESENCE_PENALTIES = 0.5
+ONNX_EXPORT_EXAMPLE_TEMPERATURES = 0.80
 ONNX_EXPORT_EXAMPLE_MAX_TOP_K_IDS = 512
+ONNX_EXPORT_EXAMPLE_TOP_PS = 0.80
+ONNX_EXPORT_EXAMPLE_MIN_PS = 0.99
 ONNX_EXPORT_OPSET = 13
 
-COMPILER = ["/opt/qti-aic/exec/qaic-exec", "-aic-hw", "-aic-hw-version=2.0", 
-            # "-stats-level=70"
-            ]
+COMPILER = ["/opt/qti-aic/exec/qaic-exec", "-aic-hw", "-aic-hw-version=2.0"]
 
 # InternVL constants
 # Fixing the feature size with reference to OpenGVLab/InternVL2_5-1B, OpenGVLab/InternVL2_5-38B and OpenGVLab/InternVL2_5-78B
@@ -100,7 +103,7 @@ class Constants:
     MAX_QPC_LIMIT = 30
     MAX_RETRIES = 10  # This constant will be used set the maximum number of retry attempts for downloading a model using huggingface_hub snapshot_download
     NUM_SPECULATIVE_TOKENS = 2
-    MAX_TOP_K_IDS = 512
+    MAX_TOP_K_IDS = ONNX_EXPORT_EXAMPLE_MAX_TOP_K_IDS
     SDK_APPS_XML = "/opt/qti-aic/versions/apps.xml"  # This xml file is parsed to find out the SDK apps version.
     SDK_PLATFORM_XML = (
         "/opt/qti-aic/versions/platform.xml"  # This xml file is parsed to find out the SDK platform version.

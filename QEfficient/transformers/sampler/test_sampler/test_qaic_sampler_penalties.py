@@ -30,6 +30,7 @@ def test_cpu_vs_vllm_cpu(setup_data_penalties):
 
     past_repetition_penalty_buffer = setup_data_penalties["past_repetition_penalty_buffer"]
     past_presence_penalty_buffer = setup_data_penalties["past_presence_penalty_buffer"]
+    past_penalty_buffer = setup_data_penalties["past_penalty_buffer"]
 
     repetition_penalties = setup_data_penalties["repetition_penalties"]
     presence_penalties = setup_data_penalties["presence_penalties"]
@@ -62,9 +63,8 @@ def test_cpu_vs_vllm_cpu(setup_data_penalties):
         batch_index,
         logits,
         output_token_ids[:, -1:],
-        past_repetition_penalty_buffer,
+        past_penalty_buffer,
         repetition_penalties,
-        past_presence_penalty_buffer,
         presence_penalties,
     )
     vllm_output_logits, vllm_prompt_mask, vllm_output_mask = \
@@ -88,10 +88,10 @@ def test_cpu_vs_vllm_cpu(setup_data_penalties):
         has_failed = True
 
     if not torch.allclose(
-        qeff_output.past_repetition_penalty_buffer, vllm_prompt_mask | vllm_output_mask
+        qeff_output.past_penalty_buffer[:, 0, :], vllm_prompt_mask | vllm_output_mask
     ):
         print_difference_in_tensors(
-            qeff_output.past_repetition_penalty_buffer, 
+            qeff_output.past_penalty_buffer[:, 0, :], 
             "Past Repetition Penalty Buffer",
             vllm_prompt_mask | vllm_output_mask,
             "vLLM Past Repetition Penalty Buffer",
@@ -100,10 +100,10 @@ def test_cpu_vs_vllm_cpu(setup_data_penalties):
         has_failed = True
         
     if not torch.allclose(
-        qeff_output.past_presence_penalty_buffer, vllm_output_mask
+        qeff_output.past_penalty_buffer[:, 1, :], vllm_output_mask
     ): 
         print_difference_in_tensors(
-            qeff_output.past_presence_penalty_buffer,
+            qeff_output.past_penalty_buffer[:, 1, :],
             "Past Presence Penalty Buffer",
             vllm_output_mask,
             "vLLM Past Presence Penalty Buffer",
@@ -131,8 +131,10 @@ def test_cpu_vs_qaic(setup_data_penalties):
 
     past_repetition_penalty_buffer = deepcopy(setup_data_penalties["past_repetition_penalty_buffer"])
     qaic_past_repetition_penalty_buffer = deepcopy(setup_data_penalties["past_repetition_penalty_buffer"])
+    past_penalty_buffer = deepcopy(setup_data_penalties["past_penalty_buffer"])
     past_presence_penalty_buffer = deepcopy(setup_data_penalties["past_presence_penalty_buffer"])
     qaic_past_presence_penalty_buffer = deepcopy(setup_data_penalties["past_presence_penalty_buffer"])
+    qaic_past_penalty_buffer = deepcopy(setup_data_penalties["past_penalty_buffer"])
 
     repetition_penalties = setup_data_penalties["repetition_penalties"]
     presence_penalties = setup_data_penalties["presence_penalties"]
@@ -141,14 +143,13 @@ def test_cpu_vs_qaic(setup_data_penalties):
     qeff_start_time = perf_counter()
     qeff_output = sampler_forward(
         None,
-        output_token_ids[:, -1:],
+        prompt_token_ids,
         position_ids,
         batch_index,
         deepcopy(logits.to(torch.float16)),
-        output_token_ids[:, -1:],
-        past_repetition_penalty_buffer,
+        None,
+        past_penalty_buffer,
         deepcopy(repetition_penalties.to(torch.float16)),
-        past_presence_penalty_buffer,
         deepcopy(presence_penalties.to(torch.float16)),
     )
     qeff_end_time = perf_counter()
@@ -169,14 +170,13 @@ def test_cpu_vs_qaic(setup_data_penalties):
         model,
         (
             None,
-            output_token_ids[:, -1:],
+            prompt_token_ids,
             position_ids,
             batch_index,
             deepcopy(qaic_logits),
-            output_token_ids[:, -1:],
-            deepcopy(qaic_past_repetition_penalty_buffer),
+            None,
+            deepcopy(qaic_past_penalty_buffer),
             repetition_penalties,
-            deepcopy(qaic_past_presence_penalty_buffer),
             presence_penalties,
         ),
         onnx_path,
@@ -185,17 +185,18 @@ def test_cpu_vs_qaic(setup_data_penalties):
             "position_ids",
             "batch_index",
             "input_logits",
-            "last_accepted_output_tokens",
-            "past_repetition_penalty_buffer",
+            # "last_accepted_output_tokens",
+            "past_penalty_buffer",
             "repetition_penalties",
-            "past_presence_penalty_buffer",
+            # "past_presence_penalty_buffer",
             "presence_penalties",
         ],
         output_names=[
             "probs",
             # "next_tokens",
-            "past_repetition_penalty_buffer_RetainedState",
-            "past_presence_penalty_buffer_RetainedState",
+            # "past_repetition_penalty_buffer_RetainedState",
+            # "past_presence_penalty_buffer_RetainedState",
+            "past_penalty_buffer_RetainedState",
         ],
         dynamo=False,
         verbose=True,
@@ -226,14 +227,14 @@ def test_cpu_vs_qaic(setup_data_penalties):
     # Run QPC file
     session = QAICInferenceSession(qpc_path=qpc_dir_path, device_ids=[11], enable_debug_logs=False)
     inputs = {
-        # "input_ids": output_token_ids[:, -1:].detach().cpu().numpy(),
+        "input_ids": prompt_token_ids.detach().cpu().numpy(),
         "position_ids": position_ids.detach().cpu().numpy(),
         "batch_index": batch_index.detach().cpu().numpy(),
         "input_logits": deepcopy(qaic_logits).detach().cpu().numpy(),
-        "last_accepted_output_tokens": output_token_ids[:, -1:].detach().cpu().numpy(),
-        "past_repetition_penalty_buffer": deepcopy(qaic_past_repetition_penalty_buffer).detach().cpu().numpy(),
+        # "last_accepted_output_tokens": output_token_ids[:, -1:].detach().cpu().numpy(),
+        "past_penalty_buffer": deepcopy(qaic_past_penalty_buffer).detach().cpu().numpy(),
         "repetition_penalties": repetition_penalties.detach().cpu().numpy(),
-        "past_presence_penalty_buffer": deepcopy(qaic_past_presence_penalty_buffer).detach().cpu().numpy(),
+        # "past_presence_penalty_buffer": deepcopy(qaic_past_presence_penalty_buffer).detach().cpu().numpy(),
         "presence_penalties": presence_penalties.detach().cpu().numpy(),
     }
     print("\nQAIC Input\n", inputs)
@@ -247,8 +248,8 @@ def test_cpu_vs_qaic(setup_data_penalties):
     print(f"Time Taken {(qaic_end_time - qaic_start_time) * 1000: .5f} ms\n")
 
     hw_output_logits = torch.from_numpy(outputs["probs"])
-    hw_past_repetition_penalty_buffer = torch.from_numpy(outputs["past_repetition_penalty_buffer_RetainedState"])
-    hw_past_presence_penalty_buffer = torch.from_numpy(outputs["past_presence_penalty_buffer_RetainedState"])
+    hw_past_repetition_penalty_buffer = torch.from_numpy(outputs["past_penalty_buffer_RetainedState"])[:, 0, :]
+    hw_past_presence_penalty_buffer = torch.from_numpy(outputs["past_penalty_buffer_RetainedState"])[:, 1, :]
 
     print("\nLogits\n", qeff_output.probs)
     print("\nQAIC Logits\n", hw_output_logits)

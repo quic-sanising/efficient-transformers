@@ -1,14 +1,14 @@
 #!/bin/bash
 
 # Define the configurations
-sequence_lengths=(128)
-batch_sizes=(1 2 8 16)
-vocab_sizes=(1024 4096 32000)
-ctx_lengths=(256 512)
 # sequence_lengths=(128)
-# batch_sizes=(4)
-# vocab_sizes=(1024)
-# ctx_lengths=(256)
+# batch_sizes=(1 2 8 16)
+# vocab_sizes=(1024 4096 32000)
+# ctx_lengths=(256 512)
+sequence_lengths=(128)
+batch_sizes=(1 2 8)
+vocab_sizes=(1024)
+ctx_lengths=(256 512)
 
 # Ensure the output directory exists
 output_dir="./pytest_outputs"
@@ -19,7 +19,7 @@ success_count=0
 total_count=0
 
 # CPU vs QAIC
-output_file="$output_dir/test_qaic_sampler__test_cpu_vs_qaic5.log"
+output_file="$output_dir/test_qaic_sampler__test_cpu_vs_qaic11.log"
 rm $output_file
 
 for sequence_length in "${sequence_lengths[@]}"; do

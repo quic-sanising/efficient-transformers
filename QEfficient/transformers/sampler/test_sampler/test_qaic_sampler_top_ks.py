@@ -26,7 +26,7 @@ def test_cpu_vs_vllm_cpu(setup_data_top_ks):
         all_greedy=False,
         all_random=False,
         top_p=None,
-        top_k=top_ks,
+        top_k=top_ks.squeeze(1),
         no_top_p=True,
         no_top_k=False,
         generators=None,
@@ -47,7 +47,7 @@ def test_cpu_vs_vllm_cpu(setup_data_top_ks):
         top_ks,
     )
     vllm_output_logits = vllm_sampler(vllm_logits, sampling_metadata)
-    print(f"QEff Output: {qeff_output.logits.squeeze(1)}")
+    print(f"QEff Output: {qeff_output[0].squeeze(1)}")
     print(f"VLLM Output: {vllm_output_logits}")
 
     assert torch.allclose(
@@ -100,7 +100,7 @@ def test_cpu_vs_qaic(setup_data_top_ks):
             "logits",
         ],
         dynamo=False,
-        verbose=True,
+        # verbose=True,
     )
 
     # Compile QPC file
@@ -110,9 +110,9 @@ def test_cpu_vs_qaic(setup_data_top_ks):
         "-v",
         "-aic-hw",
         "-convert-to-fp16",
-        "-aic-num-cores=14",
+        "-aic-num-cores=16",
         "-aic-num-of-instances=1",
-        "-num-iter=100",
+        "-num-iter=1",
         f"-m={onnx_path}",
         "-stats-level=70",
         "-aic-pmu-recipe=KernelUtil",
@@ -125,6 +125,7 @@ def test_cpu_vs_qaic(setup_data_top_ks):
         f"-aic-binary-dir={qpc_dir_path}",
         "-aic-hw-version=2.0",
         "-compile-only",
+        "-device-id=10",
     ]
     subprocess.run(["rm", "-rf", f"{qpc_dir_path}"])
     print("Compile command", " ".join(compile_cmd))
@@ -137,7 +138,7 @@ def test_cpu_vs_qaic(setup_data_top_ks):
     session = QAICInferenceSession(qpc_path=qpc_dir_path, device_ids=[0], enable_debug_logs=False)
     inputs = {
         # "input_ids": output_token_ids[:, -1:].detach().cpu().numpy(),
-        "input_logits": qaic_logits.detach().cpu().numpy(),
+        "input_logits": setup_data_top_ks["logits"].detach().cpu().numpy(),
         "top_ks": qaic_top_ks.detach().cpu().numpy(),
     }
     print("\nQAIC Input\n", inputs)
@@ -146,14 +147,14 @@ def test_cpu_vs_qaic(setup_data_top_ks):
 
     hw_output_logits = torch.from_numpy(outputs["logits"])
 
-    print("\nLogits\n", qeff_output.logits)
+    print("\nLogits\n", qeff_output[0])
     print("\nQAIC Logits\n", hw_output_logits)
 
     # Compare outputs
     assert torch.allclose(
-        qeff_output.logits.to(torch.float32), hw_output_logits, atol=1e-4
+        qeff_output[0].to(torch.float32), hw_output_logits, atol=1e-4
     ), print_difference_in_tensors(
-        qeff_output.logits.to(torch.float32),
+        qeff_output[0].to(torch.float32),
         "Logits",
         hw_output_logits,
         "QAIC Logits",
@@ -216,7 +217,7 @@ def test_gpu_vs_qaic(setup_data_top_ks):
         "-v",
         "-aic-hw",
         "-convert-to-fp16",
-        "-aic-num-cores=14",
+        "-aic-num-cores=16",
         "-aic-num-of-instances=1",
         "-num-iter=100",
         f"-m={onnx_path}",

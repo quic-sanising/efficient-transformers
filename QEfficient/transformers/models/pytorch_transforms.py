@@ -1,6 +1,6 @@
 # -----------------------------------------------------------------------------
 #
-# Copyright (c) 2025 Qualcomm Innovation Center, Inc. All rights reserved.
+# Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
 # SPDX-License-Identifier: BSD-3-Clause
 #
 # -----------------------------------------------------------------------------
@@ -272,6 +272,7 @@ from QEfficient.transformers.spd.spd_transform_forward import tlm_forward
 
 SPD_TARGET = "target"
 
+
 class CustomOpsTransform(ModuleMappingTransform):
     _module_mapping = {
         GemmaRMSNorm: GemmaCustomRMSNormAIC,
@@ -458,6 +459,13 @@ class SpDTransform:
 
 class SamplerTransform:
     """
+    Add nodes at the output of any generic QEffForCausalLM model to enable the
+    sampling of next tokens at the device (instead of the host) and return the
+    next tokens and/or probability distributions.
+
+    Note: To achieve this, the generic QEffForCausalLM model must provide the
+    logits as output.
+
     ``Mandatory`` Args:
         :model (nn.Module): PyTorch model.
 
@@ -475,20 +483,16 @@ class SamplerTransform:
     @classmethod
     def apply(cls, model: nn.Module, qaic_config: Optional[dict] = None, **kwargs) -> Tuple[nn.Module, bool]:
         transformed = False
-        if qaic_config is None or (include_sampler := qaic_config.get("include_sampler")) is None:
-            return model, transformed
-        elif not include_sampler:
+        if qaic_config is None or not qaic_config.get("include_sampler", False):
             return model, transformed
         elif (model_class := model.__class__) in cls._module_mapping:
+            model.old_forward = model.forward
             model.forward = MethodType(sampler_forward, model)
-            model.return_pdfs = qaic_config.get("return_pdfs", False)
             transformed = True
         else:
-            raise NotImplementedError(
-                f"model class {model_class} does not yet support returning multiple logits to keep."
-            )
+            raise NotImplementedError(f"Model class {model_class} does not support on device sampling.")
         return model, transformed
-    
+
 
 class VlmKVOffloadTransform(ModuleMappingTransform):
     # supported architectures

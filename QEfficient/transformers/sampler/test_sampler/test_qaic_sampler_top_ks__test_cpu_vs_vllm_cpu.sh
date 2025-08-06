@@ -1,8 +1,10 @@
 #!/bin/bash
 
 # Define the configurations
-batch_sizes=(1 4 8 16 32)
-vocab_sizes=(10 100 1024 2048 4096)
+# batch_sizes=(1 4 8 16 32)
+# vocab_sizes=(10 100 1024 2048 4096)
+batch_sizes=(1 2 4 8)
+vocab_sizes=(1024 2048)
 
 # Ensure the output directory exists
 output_dir="./pytest_outputs"

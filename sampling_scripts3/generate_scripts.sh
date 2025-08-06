@@ -10,15 +10,17 @@ seed=1
 num_cores=16
 
 qpc_base_dir="/local/mnt/workspace/sanising/quic-github/efficient-transformers"
+qeff_home_dir="/prj/crd/austin/validation/scratch/users/sanising/efficient-transformers/aic_1_20_0_119/"
+hf_home_dir="/prj/crd/austin/validation/scratch/users/sanising/models"
 
-batch_sizes=(1 2 8)
+batch_sizes=(1 2 8 16)
 ctx_lengths=(256 512)
 tensor_slices=(1 2 4 8)
 
 for num_devices in "${tensor_slices[@]}"; do
 
     # ---Without sampler---
-    base_cmd_wo="python3 ${qpc_base_dir}/run_sampler_copy2.py --model_name $model_name --no_include_sampler --no_is_tlm --no_return_pdfs --sequence_length $sequence_length --k $k --spec_length $spec_length --seed $seed --parent_directory $qpc_base_dir --num_devices $num_devices --num_cores $num_cores --kv-cache-dtype mxint8 --quantization mxfp6"
+    base_cmd_wo="python3 ${qpc_base_dir}/run_sampler_copy2.py --model_name $model_name --no_include_sampler --no_is_tlm --no_return_pdfs --sequence_length $sequence_length --k $k --spec_length $spec_length --seed $seed --parent_directory $qeff_home_dir --num_devices $num_devices --num_cores $num_cores --kv-cache-dtype mxint8 --quantization mxfp6"
 
     for batch_size in "${batch_sizes[@]}"; do
         for ctx_length in "${ctx_lengths[@]}"; do
@@ -29,11 +31,11 @@ for num_devices in "${tensor_slices[@]}"; do
             cat <<EOL > $script_name
 #!/bin/bash
 
-export QEFF_HOME=$qpc_base_dir
-export HF_HOME=/local/mnt/qt_drive/users/$USER/models/
-export AIC_TOOLS_DIR=/local/mnt/workspace/sanising/build_tools
-export TMPDIR=/local/mnt/workspace/sanising/tmp
-export QAIC_COMPILER_LIB=/local/mnt/workspace/sanising/compiler-glow/build/compiler-qualcomm-release-assert/lib/QAicCompilerManagers/libQAicCompiler.so
+export QEFF_HOME=$qeff_home_dir
+export HF_HOME=$hf_home_dir
+# export AIC_TOOLS_DIR=/local/mnt/workspace/sanising/build_tools/
+export TMPDIR=/local/mnt/workspace/sanising/tmp/
+# export QAIC_COMPILER_LIB=/local/mnt/workspace/sanising/compiler-glow/build/compiler-qualcomm-release-assert/lib/QAicCompilerManagers/libQAicCompiler.so
 # export QAIC_COMPILER_OPTS_UNSUPPORTED="$QAIC_COMPILER_OPTS_UNSUPPORTED"
 
 # mkdir -p $dump_ir_graphs_folder
@@ -50,7 +52,7 @@ EOL
     done
 
     # ---With sampler---
-    base_cmd_w="python3 ${qpc_base_dir}/run_sampler_copy2.py --model_name $model_name --include_sampler --no_is_tlm --no_return_pdfs --sequence_length $sequence_length --k $k --spec_length $spec_length --seed $seed --parent_directory $qpc_base_dir --num_devices $num_devices --num_cores $num_cores --kv-cache-dtype mxint8 --quantization mxfp6"
+    base_cmd_w="python3 ${qpc_base_dir}/run_sampler_copy2.py --model_name $model_name --include_sampler --no_is_tlm --no_return_pdfs --sequence_length $sequence_length --k $k --spec_length $spec_length --seed $seed --parent_directory $qeff_home_dir --num_devices $num_devices --num_cores $num_cores --kv-cache-dtype mxint8 --quantization mxfp6"
 
     for batch_size in "${batch_sizes[@]}"; do
         for ctx_length in "${ctx_lengths[@]}"; do
@@ -61,11 +63,11 @@ EOL
             cat <<EOL > $script_name
 #!/bin/bash
 
-export QEFF_HOME=$qpc_base_dir
-export HF_HOME=/local/mnt/qt_drive/users/$USER/models/
-export AIC_TOOLS_DIR=/local/mnt/workspace/sanising/build_tools
-export TMPDIR=/local/mnt/workspace/sanising/tmp
-export QAIC_COMPILER_LIB=/local/mnt/workspace/sanising/compiler-glow/build/compiler-qualcomm-release-assert/lib/QAicCompilerManagers/libQAicCompiler.so
+export QEFF_HOME=$qeff_home_dir
+export HF_HOME=$hf_home_dir
+# export AIC_TOOLS_DIR=/local/mnt/workspace/sanising/build_tools/
+export TMPDIR=/local/mnt/workspace/sanising/tmp/
+# export QAIC_COMPILER_LIB=/local/mnt/workspace/sanising/compiler-glow/build/compiler-qualcomm-release-assert/lib/QAicCompilerManagers/libQAicCompiler.so
 # export QAIC_COMPILER_OPTS_UNSUPPORTED="$QAIC_COMPILER_OPTS_UNSUPPORTED"
 
 # mkdir -p $dump_ir_graphs_folder

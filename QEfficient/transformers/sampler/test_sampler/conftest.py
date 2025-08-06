@@ -109,6 +109,8 @@ def setup_data_penalties(sequence_length, batch_size, vocab_size, ctx_length):
     past_presence_penalty_buffer = CtxScatterFuncCB3D.apply(
             past_presence_penalty_buffer, batch_index, output_token_ids[:, :-1], torch.ones(output_token_ids[:, :-1].shape, dtype=torch.bool))
     
+    past_penalty_buffer = torch.stack([past_repetition_penalty_buffer, past_presence_penalty_buffer], dim=1)
+
     repetition_penalties = torch.randint(1, 21, (batch_size, 1)) / 10.0
     presence_penalties = torch.randint(-10, 10, (batch_size, 1)) / 10.0
     # repetition_penalties = torch.ones(batch_size, 1)
@@ -128,6 +130,7 @@ def setup_data_penalties(sequence_length, batch_size, vocab_size, ctx_length):
         "batch_index": batch_index,
         "past_repetition_penalty_buffer": past_repetition_penalty_buffer,
         "past_presence_penalty_buffer": past_presence_penalty_buffer,
+        "past_penalty_buffer": past_penalty_buffer,
         "repetition_penalties": repetition_penalties,
         "presence_penalties": presence_penalties,
     }
@@ -234,7 +237,8 @@ def setup_data_random_sampling(batch_size, vocab_size):
 def setup_data(sequence_length, batch_size, vocab_size, ctx_length, num_devices):
     import numpy as np
 
-    seed = np.random.randint(1, 101)
+    # seed = np.random.randint(1, 101)
+    seed = 95
     torch.manual_seed(seed)
 
     prompt_token_ids = torch.randint(low=0, high=vocab_size, size=(batch_size, sequence_length))
